@@ -53,6 +53,8 @@ type Actor struct {
 	Perms    store.Matrix
 	Token    string
 	IP       string
+	// PwdChange 非空表示须先修改口令（值为原因），此时只允许访问修改口令等少数接口
+	PwdChange string
 }
 
 func New(st *store.Store, cfg Config) *Server {
@@ -69,6 +71,7 @@ func New(st *store.Store, cfg Config) *Server {
 	}
 	s.Alerts = newAlerts(s)
 	st.OnAudit = s.Alerts.Audit
+	s.normalizeSchedules()
 	s.routes()
 	if cfg.Static != "" {
 		s.mux.Handle("GET /", staticHandler(cfg.Static))
@@ -95,6 +98,10 @@ func (s *Server) route(pattern, module, op string, h handlerFn) {
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && !s.csrfOK(r) {
 			writeErr(w, http.StatusForbidden, "请求来源校验失败")
+			return
+		}
+		if a.PwdChange != "" && !pwdChangeAllowed[r.URL.Path] {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": a.PwdChange, "code": "pwd_change"})
 			return
 		}
 		if module != "" && !allowed(a.Perms, module, op) {
@@ -141,10 +148,11 @@ func (s *Server) actor(r *http.Request) (*Actor, bool) {
 	valid := false
 	s.St.Read(func(d *store.Data) {
 		ad := d.Admin(sess.Acc)
-		if ad == nil || ad.Status != "active" {
+		if ad == nil || ad.Status != "active" || !ipAllowed(ad.Allow, a.IP) {
 			return
 		}
 		valid = true
+		a.PwdChange = pwdChangeReason(d, ad, time.Now())
 		a.Name, a.BaseRole = ad.Name, ad.Role
 		if d.Role(a.Role) == nil { // 角色被删除时回退到账号自身角色
 			a.Role = ad.Role

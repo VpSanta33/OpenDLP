@@ -44,6 +44,7 @@ func (s *Server) routes() {
 	// 会话与通用
 	s.route("GET /api/v1/auth/me", "", "", s.handleMe)
 	s.route("POST /api/v1/auth/logout", "", "", s.handleLogout)
+	s.route("POST /api/v1/auth/password", "", "", s.handlePassword)
 	s.route("POST /api/v1/auth/role", "", "", s.handleSwitchRole)
 	s.route("GET /api/v1/bootstrap", "", "", s.handleBootstrap)
 	s.route("GET /api/v1/stream", "", "", s.handleStream)
@@ -104,6 +105,7 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/report-schedules", "reports", "op", s.handleScheduleCreate)
 	s.route("PATCH /api/v1/report-schedules/{id}", "reports", "op", s.handleSchedulePatch)
 	s.route("POST /api/v1/report-schedules/{id}/run", "reports", "exp", s.handleScheduleRun)
+	s.route("DELETE /api/v1/report-schedules/{id}", "reports", "op", s.handleScheduleDelete)
 
 	// 审计
 	s.route("GET /api/v1/audit", "audit", "view", s.handleAudit)
@@ -116,6 +118,7 @@ func (s *Server) routes() {
 	s.route("PUT /api/v1/roles/{key}/perms", "iam", "cfg", s.handleRolePerms)
 	s.route("POST /api/v1/admins", "iam", "cfg", s.handleAdminCreate)
 	s.route("POST /api/v1/admins/{acc}/{action}", "iam", "cfg", s.handleAdminAction)
+	s.route("PATCH /api/v1/admins/{acc}", "iam", "cfg", s.handleAdminPatch)
 
 	// 运维与设置
 	s.route("GET /api/v1/ops/metrics", "ops", "view", s.handleOpsMetrics)

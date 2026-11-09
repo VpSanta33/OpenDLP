@@ -12,6 +12,9 @@
     { key: 'exec', name: '高管安全简报', icon: 'file-text', color: 'c6', desc: '一页纸呈现整体安全态势、关键风险与改进建议，适合董事会汇报', tags: ['管理层'], pages: 4 }
   ];
   const tplOf = k => TPL.find(t => t.key === k) || TPL[0];
+  // 无运维查看权限的角色拿不到集成数据，此时返回 undefined（不确定）
+  const smtpReady = () => D.integrations ? D.integrations.some(i => i.key === 'smtp' && i.st !== 'off') : undefined;
+  const fmtAt = ms => new Date(ms).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   const lastMonth = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`; };
 
   async function preview(t) {
@@ -86,7 +89,7 @@
           <div class="rp-foot"><span class="muted small">${ic('file-text')}约 ${t.pages} 页</span><span class="sp"></span><button class="btn btn-sm btn-ghost" data-pv>${ic('eye')}预览</button><button class="btn btn-sm" data-gen data-perm="reports:exp">${ic('download')}生成</button></div>
         </article>`).join('')}</div>
       <div class="grid g2">
-        ${card('定时报表', '<div class="table-wrap"><table class="table compact-t"><thead><tr><th>报表</th><th>执行周期</th><th>接收人</th><th>下次执行</th><th>启用</th><th></th></tr></thead><tbody id="sch"></tbody></table></div>', { sub: '到期自动生成并通过邮件 / 企业微信推送' })}
+        ${card('定时报表', '<div class="table-wrap"><table class="table compact-t"><thead><tr><th>报表</th><th>执行周期</th><th>接收人</th><th>下次执行 / 最近结果</th><th>启用</th><th></th></tr></thead><tbody id="sch"></tbody></table></div>', { sub: '到期自动生成并以邮件附件发送' })}
         ${card('历史报告', '<div class="table-wrap"><table class="table compact-t"><thead><tr><th>报告名称</th><th>格式</th><th>生成时间</th><th>生成人</th><th></th></tr></thead><tbody id="his"></tbody></table></div>', { sub: '加密归档，保留 3 年', extra: '<span class="muted small" id="hisCnt"></span>' })}
       </div>`;
     },
@@ -94,10 +97,10 @@
       const q = s => root.querySelector(s);
       const FC = { HTML: 'b-primary', CSV: 'b-success' };
       function renderSch() {
-        q('#sch').innerHTML = D.reportSchedules.map((s, i) => `<tr style="--i:${i}" data-id="${s.id}"><td><b class="rn">${s.name}</b><small class="muted to">${s.fmt}</small></td><td>${ic('clock', 'ic-in')}${s.cron}</td><td>${s.to.map(x => `<span class="tag">${x}</span>`).join(' ')}</td>
-          <td class="muted">${s.on ? relTime(Date.now() - (s.next - Date.now())).replace('前', '后') : '已暂停'}</td>
+        q('#sch').innerHTML = D.reportSchedules.map((s, i) => `<tr style="--i:${i}" data-id="${s.id}"><td><b class="rn">${esc(s.name)}</b><small class="muted to">${s.fmt}</small></td><td>${ic('clock', 'ic-in')}${esc(s.cron)}</td><td>${s.to.slice(0, 2).map(x => `<span class="tag mono" title="${esc(x)}">${esc(x)}</span>`).join(' ')}${s.to.length > 2 ? ` <span class="muted small">等 ${s.to.length} 人</span>` : ''}</td>
+          <td class="muted">${s.on ? fmtAt(s.next) : '已暂停'}${s.lastAt ? `<small style="display:block" class="${s.lastErr ? 'warn-c' : 'ok-t'}" title="${esc(s.lastErr || '')}">${fmtAt(s.lastAt)} ${s.lastErr ? '发送失败：' + esc(s.lastErr.slice(0, 24)) : '已发送'}</small>` : ''}</td>
           <td><label class="switch sm"><input type="checkbox" data-sw ${s.on ? 'checked' : ''} ${UI.canDo('reports', 'op') ? '' : 'disabled'} aria-label="启用"><span></span></label></td>
-          <td><button class="btn btn-sm btn-ghost" data-run ${UI.canDo('reports', 'exp') ? '' : 'disabled'}>${ic('play')}立即执行</button></td></tr>`).join('');
+          <td class="acts"><button class="btn btn-sm btn-ghost" data-run ${UI.canDo('reports', 'exp') ? '' : 'disabled'}>${ic('play')}立即执行</button>${UI.canDo('reports', 'op') ? `<button class="icon-btn sm" data-del title="删除">${ic('trash')}</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">暂无定时报表</td></tr>';
       }
       function renderHis() {
         q('#his').innerHTML = D.reportHistory.slice(0, 8).map((h, i) => `<tr style="--i:${i}" class="${h.fresh ? 'fresh-row' : ''}"><td><div class="file-cell" title="${esc(h.name)}">${ic('file-text')}<span>${esc(h.name)}</span></div></td><td><span class="tag ${FC[h.fmt]}">${h.fmt}</span> <span class="muted small">${h.size}</span></td><td class="muted">${fmtTime(h.ts)}</td><td>${esc(h.by)}</td><td><button class="icon-btn sm" data-dl="${h.id}" aria-label="下载">${ic('download')}</button></td></tr>`).join('');
@@ -105,7 +108,7 @@
         D.reportHistory.forEach(h => { h.fresh = false; });
       }
       UI.listen('reports.changed', async () => {
-        try { const r = await API.get('/reports'); D.reportHistory = r.history; D.reportSchedules = r.schedules; if (D.reportHistory[0]) D.reportHistory[0].fresh = true; renderHis(); } catch (e) { /* 忽略 */ }
+        try { const r = await API.get('/reports'); const n = D.reportHistory.length; D.reportHistory = r.history; D.reportSchedules = r.schedules; if (D.reportHistory[0] && r.history.length > n) D.reportHistory[0].fresh = true; renderHis(); renderSch(); } catch (e) { /* 忽略 */ }
       });
       q('.rp-grid').addEventListener('click', e => {
         const c = e.target.closest('.rp-tpl'); if (!c) return;
@@ -121,6 +124,12 @@
           API.patch('/report-schedules/' + encodeURIComponent(s.id), { on: want }).then(upd => { Object.assign(s, upd); renderSch(); toast(`定时报表「${esc(s.name)}」已${s.on ? '启用' : '暂停'}`, { type: s.on ? 'success' : 'warning' }); })
             .catch(err => { e.target.checked = !want; UI.apiError(err); });
         } else if (e.target.closest('[data-run]')) UI.task(() => API.post(`/report-schedules/${encodeURIComponent(s.id)}/run`));
+        else if (e.target.closest('[data-del]')) {
+          UI.confirmDialog({ title: `删除定时报表「${esc(s.name)}」`, text: '删除后不再自动生成与发送，已归档的历史报告不受影响。', okText: '删除', danger: true }).then(ok => ok &&
+            act(e.target.closest('[data-del]'), () => API.del('/report-schedules/' + encodeURIComponent(s.id)), () => {
+              D.reportSchedules = D.reportSchedules.filter(x => x !== s); renderSch(); toast(`定时报表「${esc(s.name)}」已删除`, { type: 'success' });
+            }));
+        }
       });
       q('#his').addEventListener('click', e => { const b = e.target.closest('[data-dl]'); if (b) API.download(`/api/v1/reports/${encodeURIComponent(b.dataset.dl)}/download`); });
       q('#newSch').addEventListener('click', () => {
@@ -130,13 +139,14 @@
             <div class="field"><label class="lbl">报表模板</label><select class="input" id="sT">${TPL.map(t => `<option value="${t.key}">${t.name}</option>`).join('')}</select></div>
             <div class="grid g2" style="margin-bottom:0"><div class="field"><label class="lbl">执行周期</label><select class="input" id="sC"><option>每日 08:00</option><option selected>每周一 09:00</option><option>每月 1 日 08:00</option><option>每季度首日 09:00</option></select></div>
             <div class="field"><label class="lbl">输出格式</label><select class="input" id="sF"><option>HTML</option><option>CSV</option></select></div></div>
-            <div class="field"><label class="lbl">接收人</label><div class="chips" id="sR">${['CISO', '安全运营组', '合规委员会', '各部门负责人', 'CEO', 'CIO'].map((r, i) => `<span class="chip ${i === 1 ? 'on' : ''}">${ic('check')}${r}</span>`).join('')}</div></div>
+            <div class="field"><label class="lbl">接收人邮箱 <em>*</em> <span class="hint">多个用逗号或换行分隔，最多 20 个</span></label><textarea class="input mono" id="sR" rows="3" placeholder="soc@corp.example, ciso@corp.example"></textarea></div>
+            <p class="muted small">${smtpReady() === false ? `${ic('alert', 'ic-in')}尚未配置「告警邮件 (SMTP)」集成，报表会生成并归档，但无法发送邮件。` : '报表将以附件形式通过「运维中心 → 告警邮件 (SMTP)」集成发送。'}</p>
           </div>
           <div class="md-foot"><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok>${ic('save')}创建</button></div>`);
-        panel.querySelector('#sR').addEventListener('click', e => { const c = e.target.closest('.chip'); c && c.classList.toggle('on'); });
         panel.querySelector('[data-ok]').addEventListener('click', e => {
-          const to = $$('#sR .chip.on', panel).map(c => c.textContent);
-          if (!to.length) { toast('请至少选择一位接收人', { type: 'warning' }); return; }
+          const to = panel.querySelector('#sR').value.split(/[\s,，;；]+/).map(x => x.trim()).filter(Boolean);
+          panel.querySelector('#sR').classList.toggle('err', !to.length);
+          if (!to.length) { toast('请至少填写一个接收人邮箱', { type: 'warning' }); return; }
           act(e.currentTarget, () => API.post('/report-schedules', { tpl: panel.querySelector('#sT').value, cron: panel.querySelector('#sC').value, to, fmt: panel.querySelector('#sF').value }), sc => {
             D.reportSchedules.unshift(sc);
             close(); renderSch(); toast(`定时报表「${esc(sc.name)}」已创建`, { type: 'success', title: '创建成功' });

@@ -246,6 +246,59 @@ func (al *Alerts) deliver(ctx context.Context, key string, q <-chan notify.Messa
 	}
 }
 
+// Mail 通过「告警邮件 (SMTP)」集成发送给指定收件人（定时报表使用），同步返回结果并计入投递统计。
+func (al *Alerts) Mail(ctx context.Context, to []string, m notify.Message) error {
+	var sd notify.SMTP
+	ok := false
+	base := ""
+	al.s.St.Read(func(d *store.Data) {
+		for _, it := range d.Integrations {
+			if it.Key == "smtp" {
+				if x, isSMTP := buildSender(it, al.s.Cfg.Version).(notify.SMTP); isSMTP {
+					sd, ok = x, true
+				}
+			}
+		}
+		base, _ = d.Settings["consoleUrl"].(string)
+	})
+	if !ok {
+		return fmt.Errorf("未配置「告警邮件 (SMTP)」集成，报表已归档但未发送")
+	}
+	sd.To = to
+	var err error
+	if al.s.Cfg.Demo {
+		slog.Debug("演示模式：模拟发送报表邮件", "to", to, "title", m.Title)
+	} else {
+		cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		err = sd.Send(cctx, m, base)
+	}
+	al.record("smtp", err)
+	return err
+}
+
+// record 记录一次投递结果到集成的投递统计。
+func (al *Alerts) record(key string, err error) {
+	al.s.St.Write(func(d *store.Data) {
+		for _, it := range d.Integrations {
+			if it.Key != key {
+				continue
+			}
+			if it.Delivery == nil {
+				it.Delivery = &store.Delivery{}
+			}
+			it.Delivery.LastAt = time.Now().UnixMilli()
+			if err != nil {
+				it.Delivery.Fail++
+				it.Delivery.LastErr = clip(err.Error(), 200)
+			} else {
+				it.Delivery.OK++
+				it.Delivery.LastErr = ""
+			}
+		}
+	})
+}
+
 // sendNow 立即发送一条消息并记录投递统计。
 func (al *Alerts) sendNow(ctx context.Context, key string, m notify.Message) error {
 	var sd sender
@@ -270,23 +323,6 @@ func (al *Alerts) sendNow(ctx context.Context, key string, m notify.Message) err
 		defer cancel()
 		err = sd.Send(cctx, m, base)
 	}
-	al.s.St.Write(func(d *store.Data) {
-		for _, it := range d.Integrations {
-			if it.Key != key {
-				continue
-			}
-			if it.Delivery == nil {
-				it.Delivery = &store.Delivery{}
-			}
-			it.Delivery.LastAt = time.Now().UnixMilli()
-			if err != nil {
-				it.Delivery.Fail++
-				it.Delivery.LastErr = clip(err.Error(), 200)
-			} else {
-				it.Delivery.OK++
-				it.Delivery.LastErr = ""
-			}
-		}
-	})
+	al.record(key, err)
 	return err
 }

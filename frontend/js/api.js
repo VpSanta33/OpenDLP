@@ -21,6 +21,7 @@
       const err = new Error((data && data.error) || `请求失败（HTTP ${res.status}）`);
       err.status = res.status; err.data = data;
       if (res.status === 401 && !o.quiet401 && API.onUnauthorized) API.onUnauthorized(err);
+      if (res.status === 403 && data && data.code === 'pwd_change' && API.onPwdChange) API.onPwdChange(err);
       throw err;
     }
     return data;

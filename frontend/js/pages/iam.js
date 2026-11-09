@@ -184,24 +184,28 @@
         <div class="mini"><span class="mini-ic mi-primary">${ic('users')}</span><div><span>管理员账号</span><b id="aN">0</b></div></div>
         <div class="mini"><span class="mini-ic mi-success">${ic('shield-check')}</span><div><span>MFA 覆盖率</span><b id="aM">0</b></div></div>
         <div class="mini"><span class="mini-ic mi-danger">${ic('lock')}</span><div><span>锁定账号</span><b id="aL">0</b></div></div>
-        <div class="mini"><span class="mini-ic mi-warning">${ic('key')}</span><div><span>密码将过期（7 天内）</span><b>1</b></div></div>
+        <div class="mini"><span class="mini-ic mi-warning">${ic('key')}</span><div><span>口令待修改 / 7 天内过期</span><b id="aP">0</b></div></div>
       </div>
       <div class="grid adm-grid">
-        ${card('管理员账号', `<div class="table-wrap"><table class="table"><thead><tr><th>账号</th><th>角色</th><th>双因素认证</th><th>登录 IP</th><th>最近登录</th><th>状态</th><th></th></tr></thead><tbody id="adm"></tbody></table></div>`, { cls: 'span-2', extra: `<button class="btn btn-sm btn-primary" id="newAdm" data-perm="iam:cfg">${ic('plus')}新建管理员</button>` })}
+        ${card('管理员账号', `<div class="table-wrap"><table class="table"><thead><tr><th>账号</th><th>角色</th><th>双因素认证</th><th>登录来源限制</th><th>最近登录</th><th>状态</th><th></th></tr></thead><tbody id="adm"></tbody></table></div>`, { cls: 'span-2', extra: `<button class="btn btn-sm btn-primary" id="newAdm" data-perm="iam:cfg">${ic('plus')}新建管理员</button>` })}
         ${card('安全策略', `<ul class="pol-list">
-          ${[['key', '密码复杂度', '≥ 12 位，含大小写字母、数字与符号'], ['clock', '密码有效期', '90 天强制更换，不得与近 5 次重复'], ['lock', '登录失败锁定', '连续 5 次失败锁定 15 分钟'], ['shield-check', '双因素认证', '所有管理员强制启用 TOTP / 企业微信'], ['globe', '登录 IP 白名单', '仅允许 10.0.8.0/24 运维网段'], ['logout', '会话超时', '无操作 30 分钟自动退出']].map(([i, t, d]) => `<li>${ic(i)}<div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ul>`, { sub: '符合等保 2.0 身份鉴别要求' })}
+          ${[['key', '口令复杂度', '≥ 12 位，含大小写字母、数字与符号，不得包含账号名'], ['clock', '口令有效期', maxAge() ? `${maxAge()} 天强制更换；初始口令与重置后的口令首次登录须修改` : '未启用定期更换（可在系统设置中开启）'], ['lock', '登录失败锁定', '连续 5 次失败锁定 15 分钟'], ['shield-check', '双因素认证', '新建管理员强制绑定 TOTP 身份验证器'], ['globe', '登录来源限制', `按账号配置 IP / 网段，已有 <b id="aA">0</b> 个账号启用`], ['logout', '会话超时', '无操作 30 分钟、最长 12 小时自动退出']].map(([i, t, d]) => `<li>${ic(i)}<div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ul>`, { sub: '符合等保 2.0 身份鉴别要求' })}
       </div>`;
     const q = s => el.querySelector(s);
+    const pwdDue = a => a.mustChange || (maxAge() && a.pwdChanged && Date.now() - a.pwdChanged > (maxAge() - 7) * 864e5);
     function render() {
+      q('#aP').textContent = D.admins.filter(pwdDue).length;
+      q('#aA').textContent = D.admins.filter(a => (a.allow || []).length).length;
       q('#aN').textContent = D.admins.length;
       q('#aM').innerHTML = Math.round(D.admins.filter(a => a.mfa).length / D.admins.length * 100) + '<small>%</small>';
       q('#aL').textContent = D.admins.filter(a => a.status === 'locked').length;
       q('#adm').innerHTML = D.admins.map((a, i) => { const r = UI.ROLE[a.role] || { color: '', name: a.role }; return `<tr style="--i:${i}" data-acc="${a.acc}"><td><div class="u-cell">${avatar(a.name, 'sm')}<div><b>${esc(a.name)}</b><small class="mono">${a.acc}</small></div></div></td>
         <td><span class="tag b-${r.color}">${r.name}</span></td>
         <td>${a.mfa ? `<span class="ok-t">${ic('shield-check', 'ic-in')}已启用</span>` : `<span class="warn-c">${ic('alert', 'ic-in')}未启用</span>`}</td>
-        <td class="mono muted">${a.ip}</td><td class="muted">${relTime(a.last)}</td>
-        <td>${a.status === 'locked' ? '<span class="status st-pending">已锁定</span>' : '<span class="status st-resolved">正常</span>'}</td>
-        <td class="acts">${a.status === 'locked' ? `<button class="btn btn-sm" data-a="unlock">${ic('unlock')}解锁</button>` : a.mfa ? `<button class="btn btn-sm btn-ghost" data-a="mfa">重置 MFA</button>` : `<button class="btn btn-sm" data-a="force">${ic('shield')}强制启用 MFA</button>`}${a.acc === UI.me.acc ? '<span class="tag">当前</span>' : `<button class="icon-btn sm" data-a="dis" title="禁用">${ic('ban')}</button>`}</td></tr>`; }).join('');
+        <td><button class="link-btn mono small" data-a="allow" data-perm="iam:cfg" title="设置允许登录的来源">${(a.allow || []).length ? esc(a.allow.slice(0, 2).join('、')) + (a.allow.length > 2 ? ` 等 ${a.allow.length} 项` : '') : '不限制'}</button></td>
+        <td class="muted">${a.last ? relTime(a.last) : '从未登录'}${a.ip ? `<small class="mono" style="display:block">${esc(a.ip)}</small>` : ''}</td>
+        <td>${a.status === 'locked' ? '<span class="status st-pending">已锁定</span>' : '<span class="status st-resolved">正常</span>'}${a.mustChange ? '<small class="warn-c" style="display:block">待修改口令</small>' : pwdDue(a) ? '<small class="warn-c" style="display:block">口令即将过期</small>' : ''}</td>
+        <td class="acts">${a.status === 'locked' ? `<button class="btn btn-sm" data-a="unlock">${ic('unlock')}解锁</button>` : a.mfa ? `<button class="btn btn-sm btn-ghost" data-a="mfa">重置 MFA</button>` : `<button class="btn btn-sm" data-a="force">${ic('shield')}强制启用 MFA</button>`}${a.acc === UI.me.acc ? '<span class="tag">当前</span>' : `<button class="icon-btn sm" data-a="pwd" title="重置口令">${ic('key')}</button><button class="icon-btn sm" data-a="dis" title="禁用">${ic('ban')}</button>`}</td></tr>`; }).join('');
     }
     q('#adm').addEventListener('click', async e => {
       const b = e.target.closest('[data-a]'); if (!b) return;
@@ -213,6 +217,11 @@
       });
       if (k === 'unlock') run('unlock').then(r => r && toast(`账号 ${esc(a.acc)} 已解锁`, { type: 'success' }));
       else if (k === 'force') run('force-mfa');
+      else if (k === 'pwd') {
+        if (!await confirmDialog({ title: `重置 ${esc(a.acc)} 的口令`, text: '将生成新的随机初始口令（仅显示一次），该账号现有会话全部下线，下次登录须修改口令。', okText: '确认重置' })) return;
+        run('reset-password').then(r => r && secretModal(`${esc(a.name)} 的口令已重置`, '请通过安全渠道交付，该口令仅在首次登录时有效', [['账号', a.acc], ['初始口令', r.initialPassword]]));
+      }
+      else if (k === 'allow') editAllow(a);
       else if (k === 'mfa') { if (await confirmDialog({ title: '重置双因素认证', text: `${esc(a.name)} 需要重新绑定身份验证器，现有会话将全部下线。`, okText: '确认重置' })) run('reset-mfa'); }
       else if (k === 'dis') { if (await confirmDialog({ title: `禁用管理员 ${esc(a.acc)}`, text: '禁用后该账号将立即下线且无法登录，相关操作记录仍会保留。', okText: '确认禁用', danger: true })) run('disable').then(r => r && toast(`账号 ${esc(a.acc)} 已禁用并强制下线`, { type: 'warning' })); }
     });
@@ -225,7 +234,7 @@
             <div class="field"><label class="lbl">姓名 <em>*</em></label><input class="input" id="nName" placeholder="从 AD 选择或手动输入"></div>
           </div>
           <div class="field"><label class="lbl">角色</label><div class="opt-grid" id="nRole">${D.roles.filter(r => r.key !== 'super').map((r, i) => `<button class="opt ${i === 1 ? 'on' : ''}" data-r="${r.key}">${ic(r.builtin ? 'shield' : 'user')}${r.name}</button>`).join('')}</div></div>
-          <div class="field"><label class="lbl">登录 IP 限制 <span class="hint">IP 或 CIDR 网段</span></label><input class="input" id="nIp" value="10.0.8.0/24"></div>
+          <div class="field"><label class="lbl">登录来源限制 <span class="hint">IP 或 CIDR 网段，多个用逗号分隔；留空不限制</span></label><input class="input mono" id="nIp" placeholder="例如 10.0.8.0/24"></div>
           <label class="set-row"><div><b>强制双因素认证</b><small>安全策略要求，不可关闭</small></div><span class="switch"><input type="checkbox" checked disabled><span></span></span></label>
         </div>
         <div class="md-foot"><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok>${ic('check')}创建</button></div>`);
@@ -237,13 +246,28 @@
         g('#nAcc').classList.toggle('err', !!bad); err.textContent = bad; err.classList.toggle('show', !!bad);
         g('#nName').classList.toggle('err', !name);
         if (bad || !name) return;
-        act(e.currentTarget, () => API.post('/admins', { acc, name, role: g('#nRole .opt.on').dataset.r, ip: g('#nIp').value.trim() }), r => {
+        act(e.currentTarget, () => API.post('/admins', { acc, name, role: g('#nRole .opt.on').dataset.r, allow: splitList(g('#nIp').value) }), r => {
           D.admins.push(r.admin);
           close(); render();
           secretModal(`管理员 ${esc(r.admin.name)} 已创建`, '请将初始口令与 MFA 绑定信息安全交付，首次登录后应立即修改口令', [['账号', r.admin.acc], ['初始口令', r.initialPassword], ['MFA 绑定（otpauth URI）', r.otpauth]]);
         });
       });
     });
+    // 设置允许登录的来源 IP / 网段
+    function editAllow(a) {
+      const { panel, close } = openLayer('modal', `
+        <div class="md-head"><div><h2>登录来源限制 · ${esc(a.name)}</h2><p>仅允许从以下 IP 或网段登录，超出范围的已登录会话立即失效</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
+        <div class="md-body"><div class="field"><label class="lbl">允许的来源 <span class="hint">每行一个，例如 10.0.8.0/24 或 192.168.1.20；留空表示不限制</span></label>
+          <textarea class="input mono" id="alw" rows="5">${esc((a.allow || []).join('\n'))}</textarea></div>
+          <p class="muted small">最近登录来源：<span class="mono">${esc(a.ip || '—')}</span>${a.acc === UI.me.acc ? `　当前会话来源：<span class="mono">${esc(UI.me.ip)}</span>` : ''}</p></div>
+        <div class="md-foot"><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok>${ic('save')}保存</button></div>`);
+      panel.querySelector('[data-ok]').addEventListener('click', e => act(e.currentTarget, () => API.patch('/admins/' + encodeURIComponent(a.acc), { allow: splitList(panel.querySelector('#alw').value) }), v => {
+        Object.assign(a, v); close(); render();
+        toast(v.allow.length ? `${esc(a.acc)} 仅允许从 ${v.allow.length} 个来源登录` : `${esc(a.acc)} 已取消登录来源限制`, { type: 'success', title: '已保存' });
+      }));
+    }
     render();
   }
+  const splitList = v => v.split(/[\s,，;；]+/).map(x => x.trim()).filter(Boolean);
+  const maxAge = () => (D.settings && D.settings.pwdMaxAge !== undefined ? D.settings.pwdMaxAge : 90);
 })();

@@ -44,15 +44,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	var (
-		status  int
-		msg     string
-		mfa     bool
-		name    string
-		role    string
-		secret  string
-		lastIP  string
-		lastAt  int64
-		success bool
+		status    int
+		msg       string
+		mfa       bool
+		name      string
+		role      string
+		secret    string
+		lastIP    string
+		lastAt    int64
+		success   bool
+		pwdChange string
 	)
 	// 先在读锁外取出哈希以避免在写锁内执行耗时的 PBKDF2
 	var hash string
@@ -100,9 +101,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			status, msg, entry.Reason = http.StatusForbidden, "该账号已被禁用，请联系系统管理员", "账号已禁用"
 			return
 		}
+		if !ipAllowed(a.Allow, ip) {
+			status, msg, entry.Reason = http.StatusForbidden, "当前网络位置不允许登录该账号，请联系系统管理员", "来源 IP 不在允许范围"
+			return
+		}
 		a.Failed = 0
 		success = true
 		mfa, name, role, secret, lastIP, lastAt = a.MFA, a.Name, a.Role, a.TOTPSecret, a.IP, a.Last
+		pwdChange = pwdChangeReason(d, a, now)
 		if mfa {
 			entry.Detail = "口令校验通过，等待双因素认证"
 		} else {
@@ -128,7 +134,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSessionCookie(w, tok, 0)
-	writeJSON(w, http.StatusOK, map[string]any{"mfa": false, "name": name, "last": lastAt, "lastIp": lastIP, "warn": "该账号未开启双因素认证，建议尽快启用"})
+	writeJSON(w, http.StatusOK, map[string]any{"mfa": false, "name": name, "last": lastAt, "lastIp": lastIP, "pwdChange": pwdChange, "warn": "该账号未开启双因素认证，建议尽快启用"})
 }
 
 // POST /api/v1/auth/mfa
@@ -161,7 +167,7 @@ func (s *Server) handleMFA(w http.ResponseWriter, r *http.Request) {
 	if valid && !s.Sess.MarkOTPUsed(ch.Acc, counter) {
 		valid = false
 	}
-	var role, name, lastIP string
+	var role, name, lastIP, pwdChange string
 	var lastAt int64
 	s.St.Write(func(d *store.Data) {
 		a := d.Admin(ch.Acc)
@@ -171,10 +177,13 @@ func (s *Server) handleMFA(w http.ResponseWriter, r *http.Request) {
 		}
 		if !e.OK {
 			e.Reason = "动态码错误"
+		} else if !ipAllowed(a.Allow, ip) {
+			e.OK, e.Reason = false, "来源 IP 不在允许范围"
 		}
 		_ = s.St.AppendAudit(context.Background(), e)
 		if e.OK {
 			role, name, lastIP, lastAt = a.Role, a.Name, a.IP, a.Last
+			pwdChange = pwdChangeReason(d, a, time.Now())
 			a.Last, a.IP = time.Now().UnixMilli(), ip
 		}
 	})
@@ -189,7 +198,7 @@ func (s *Server) handleMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSessionCookie(w, tok, 0)
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "last": lastAt, "lastIp": lastIP})
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "last": lastAt, "lastIp": lastIP, "pwdChange": pwdChange})
 }
 
 // POST /api/v1/auth/sso、/auth/qr —— 需要对接企业 IdP / 企业微信；开发模式下模拟为 admin 登录。
@@ -208,7 +217,7 @@ func (s *Server) handleFederated(via string) http.HandlerFunc {
 		var last int64
 		s.St.Write(func(d *store.Data) {
 			a := d.Admin("admin")
-			if a == nil || a.Status != "active" {
+			if a == nil || a.Status != "active" || !ipAllowed(a.Allow, ip) {
 				return
 			}
 			role, name, last = a.Role, a.Name, a.Last
@@ -246,7 +255,7 @@ func (s *Server) meJSON(a *Actor) map[string]any {
 		}
 	})
 	return map[string]any{"acc": a.Acc, "name": a.Name, "role": a.Role, "roleName": roleName, "baseRole": a.BaseRole, "perms": a.Perms, "mfa": mfa, "ip": a.IP,
-		"canSwitch": s.Cfg.Dev && a.BaseRole == "super", "dev": s.Cfg.Dev}
+		"canSwitch": s.Cfg.Dev && a.BaseRole == "super", "dev": s.Cfg.Dev, "pwdChange": a.PwdChange}
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, a *Actor) {

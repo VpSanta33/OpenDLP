@@ -308,6 +308,7 @@
       ${me.canSwitch ? `<div class="pm-sec">切换身份 <small>开发模式 · 演示三员分立</small></div>
       ${['super', 'sysadmin', 'secadmin', 'auditor'].map(k => `<button class="pm-item ${me.role === k ? 'cur' : ''}" data-role="${k}">${ic(me.role === k ? 'check' : 'user')}${esc((UI.ROLE[k] || {}).name || k)}</button>`).join('')}
       <div class="pm-div"></div>` : ''}
+      <button class="pm-item" data-u="pwd">${ic('key')}修改口令</button>
       <button class="pm-item" data-u="appear">${ic('palette')}界面偏好</button>
       <button class="pm-item" data-u="doc">${ic('book')}操作手册</button>
       <div class="pm-div"></div>
@@ -560,14 +561,80 @@
 
     async function finish(r, warn, via) {
       clearInterval(qrTimer);
-      try { await enter(); } catch (ex) { err(ex.message); return; }
+      let entered;
+      try { entered = await enter(); } catch (ex) { err(ex.message); return; }
       el.classList.add('out');
       setTimeout(() => el.remove(), 700);
+      if (!entered) return;
       setTimeout(() => {
         toast(`欢迎回来，${esc(r.name)}。${r.last ? `上次登录 ${fmtTime(r.last).slice(0, 11)}，来自 ${esc(r.lastIp || '-')}` : ''}${via ? ' · 本次通过' + via + '登录' : ''}`, { type: 'success', title: '登录成功', dur: 4200 });
         if (warn) toast(esc(warn), { type: 'warning', title: '安全提示' });
       }, 500);
     }
+  }
+
+  /* ---------- 修改口令 ---------- */
+  const pwdFields = (cur) => `
+    <div class="field"><label class="lbl" for="pcOld">${cur}</label><div class="in-ic">${ic('lock')}<input class="input" id="pcOld" type="password" autocomplete="current-password"></div></div>
+    <div class="field"><label class="lbl" for="pcNew">新口令 <span class="hint">≥ 12 位，含大小写字母、数字与符号，不含账号名</span></label><div class="in-ic">${ic('key')}<input class="input" id="pcNew" type="password" autocomplete="new-password"></div></div>
+    <div class="field"><label class="lbl" for="pcNew2">确认新口令</label><div class="in-ic">${ic('key')}<input class="input" id="pcNew2" type="password" autocomplete="new-password"></div><div class="field-err" id="pcErr"></div></div>`;
+  // 校验并提交，成功返回 true
+  async function submitPwd(root, btn, onErr) {
+    const g = s => root.querySelector(s);
+    const body = { old: g('#pcOld').value, new: g('#pcNew').value };
+    if (!body.old || !body.new) return onErr('请填写全部字段'), false;
+    if (body.new !== g('#pcNew2').value) return onErr('两次输入的新口令不一致'), false;
+    if (body.new === body.old) return onErr('新口令不能与当前口令相同'), false;
+    const r = await act(btn, () => API.post('/auth/password', body).catch(ex => { onErr(ex.message); return null; }));
+    return !!r;
+  }
+  // 强制改密（首次登录 / 管理员重置 / 口令过期）：全屏界面，完成前无法使用控制台
+  function showPwdChange(me) {
+    if ($('#pwdc')) return;
+    const el = document.createElement('div');
+    el.id = 'pwdc'; el.className = 'login';
+    el.innerHTML = `
+      <section class="lg-art"><div class="lg-grid"></div>
+        <div class="lg-copy"><div class="lg-brand"><span class="brand-logo">${ic('shield-check')}</span>OpenDLP</div>
+          <h1>请设置新口令</h1>
+          <p>${esc(me.pwdChange)}。修改完成后，该账号在其他设备上的会话将全部下线。</p>
+          <ul><li>${ic('check')}口令仅以 PBKDF2 哈希保存</li><li>${ic('check')}修改操作写入审计日志</li></ul></div></section>
+      <section class="lg-panel"><div class="lg-box">
+        <div class="lg-head"><h2>修改口令</h2><p>${esc(me.name)}（${esc(me.acc)}）</p></div>
+        <div class="lg-pane on"><form id="pcForm" novalidate>${pwdFields('当前口令（初始口令或原口令）')}
+          <button class="btn btn-primary btn-lg" type="submit" id="pcOk">确认修改并进入控制台</button>
+          <button class="btn btn-ghost" type="button" id="pcOut" style="width:100%;margin-top:8px">退出登录</button></form></div>
+        <div class="lg-foot">${ic('lock')}修改前无法访问控制台的任何功能</div>
+      </div></section>`;
+    document.body.appendChild(el);
+    app.classList.add('locked');
+    requestAnimationFrame(() => el.classList.add('show'));
+    const q = x => el.querySelector(x);
+    const err = m => { const e = q('#pcErr'); e.textContent = m; e.classList.add('show'); const b = q('.lg-box'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); };
+    setTimeout(() => q('#pcOld').focus(), 300);
+    q('#pcForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      if (!await submitPwd(el, q('#pcOk'), err)) return;
+      try { await enter(); } catch (ex) { err(ex.message); return; }
+      el.classList.add('out'); setTimeout(() => el.remove(), 700);
+      toast('口令已修改，其他设备上的会话已下线', { type: 'success', title: '修改成功' });
+    });
+    q('#pcOut').addEventListener('click', async () => {
+      try { await API.post('/auth/logout'); } catch (e) { /* 忽略 */ }
+      el.remove(); showLogin('您已退出登录');
+    });
+  }
+  // 主动修改口令（用户菜单）
+  function openPwdChange() {
+    const { panel, close } = openLayer('modal', `
+      <div class="md-head"><div><h2>修改口令</h2><p>修改后其他设备上的会话将全部下线</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
+      <div class="md-body">${pwdFields('当前口令')}</div>
+      <div class="md-foot"><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok>${ic('save')}确认修改</button></div>`);
+    const err = m => { const e = panel.querySelector('#pcErr'); e.textContent = m; e.classList.add('show'); };
+    panel.querySelector('[data-ok]').addEventListener('click', async e => {
+      if (!await submitPwd(panel, e.currentTarget, err)) return;
+      close(); toast('口令已修改，其他设备上的会话已下线', { type: 'success', title: '修改成功' });
+    });
   }
 
   /* ---------- 首次初始化：创建超级管理员并绑定 MFA ---------- */
@@ -657,6 +724,8 @@
 
   /* 进入控制台：拉取引导数据 → 渲染外壳 → 建立实时推送 */
   async function enter() {
+    const me = await API.get('/auth/me');
+    if (me.pwdChange) { showPwdChange(me); return false; }
     const boot = await API.get('/bootstrap');
     D.load(boot);
     UI.me = boot.me;
@@ -666,6 +735,7 @@
     API.stream(UI.emit, () => { if (UI.me) API.get('/auth/me').catch(() => {}); });
     if (!location.hash) location.hash = '#/dashboard';
     route();
+    return true;
   }
   function leave(reason) {
     API.closeStream();
@@ -675,6 +745,13 @@
     showLogin(reason);
   }
   API.onUnauthorized = () => { if (UI.me) leave('会话已过期或已在其他位置失效，请重新登录'); };
+  // 会话期间口令到期：关闭控制台，进入改密流程
+  API.onPwdChange = () => {
+    if (!UI.me || $('#pwdc')) return;
+    API.closeStream(); UI.runCleanups(); UI.closeAllLayers(); closePops();
+    UI.me = null; D.reset(); $('#view').innerHTML = '';
+    API.get('/auth/me').then(showPwdChange, () => showLogin());
+  };
   async function logout() {
     const ok = await confirmDialog({ title: '退出登录', text: '退出后需要重新进行身份验证，未保存的更改将会丢失。', okText: '退出登录', danger: true });
     if (!ok) return;
@@ -745,6 +822,7 @@
       closePops();
       const u = b.dataset.u;
       if (u === 'appear') return openAppearance();
+      if (u === 'pwd') return openPwdChange();
       if (u === 'logout') return logout();
       toast('OpenDLP 管理员手册 v3.2 · 共 12 章，部署与接口说明见 README', { type: 'info', title: '操作手册' });
     });

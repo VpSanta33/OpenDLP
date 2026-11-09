@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"opendlp/internal/notify"
@@ -21,6 +22,7 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	lastPurge := time.Time{}
+	var reporting atomic.Bool
 	for {
 		select {
 		case <-ctx.Done():
@@ -68,6 +70,9 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 		s.St.Read(func(d *store.Data) { fleet = d.Fleet(now) })
 		s.Hub.Publish(Event{Name: "fleet", Module: "dashboard", Data: fleet})
 		s.Sess.Purge()
+		if reporting.CompareAndSwap(false, true) {
+			go func() { defer reporting.Store(false); s.runDueSchedules(ctx, now) }()
+		}
 
 		if now.Sub(lastPurge) > 24*time.Hour {
 			lastPurge = now

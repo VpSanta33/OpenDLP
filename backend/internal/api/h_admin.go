@@ -222,8 +222,19 @@ func genPassword() string {
 }
 
 func (s *Server) handleAdminCreate(w http.ResponseWriter, r *http.Request, a *Actor) {
-	var req struct{ Acc, Name, Role, IP string }
+	var req struct {
+		Acc, Name, Role, IP string
+		Allow               []string
+	}
 	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.IP != "" { // 兼容旧版单个 IP 字段
+		req.Allow = append(req.Allow, req.IP)
+	}
+	allow, aerr := parseAllow(req.Allow)
+	if aerr != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "登录来源限制："+aerr.Error())
 		return
 	}
 	req.Acc, req.Name = strings.TrimSpace(req.Acc), strings.TrimSpace(req.Name)
@@ -238,12 +249,6 @@ func (s *Server) handleAdminCreate(w http.ResponseWriter, r *http.Request, a *Ac
 	if req.Role == "super" {
 		writeErr(w, http.StatusForbidden, "不允许创建超级管理员")
 		return
-	}
-	if req.IP != "" {
-		if _, _, err := net.ParseCIDR(req.IP); err != nil && net.ParseIP(req.IP) == nil {
-			writeErr(w, http.StatusUnprocessableEntity, "登录 IP 限制须为 IP 或 CIDR 网段")
-			return
-		}
 	}
 	pw := genPassword()
 	hash, err := auth.HashPassword(pw)
@@ -260,7 +265,7 @@ func (s *Server) handleAdminCreate(w http.ResponseWriter, r *http.Request, a *Ac
 			return http.StatusConflict, fail("该账号已存在")
 		}
 		now := time.Now().UnixMilli()
-		ad := &store.Admin{Acc: req.Acc, Name: req.Name, Role: req.Role, MFA: true, IP: req.IP, Status: "active", Created: now, PwdHash: hash, TOTPSecret: secret, PwdChanged: now}
+		ad := &store.Admin{Acc: req.Acc, Name: req.Name, Role: req.Role, MFA: true, Allow: allow, Status: "active", Created: now, PwdHash: hash, TOTPSecret: secret, PwdChanged: now, MustChange: true}
 		d.Admins = append(d.Admins, ad)
 		s.auditIn(d, a, "权限变更", fmt.Sprintf("新建管理员 %s（%s，角色 %s）", ad.Acc, ad.Name, d.RoleName(ad.Role)), true, "")
 		// 初始口令与 MFA 绑定信息仅在此响应中返回一次，服务端只保存哈希
@@ -271,7 +276,7 @@ func (s *Server) handleAdminCreate(w http.ResponseWriter, r *http.Request, a *Ac
 // POST /api/v1/admins/{acc}/unlock|disable|reset-mfa|force-mfa
 func (s *Server) handleAdminAction(w http.ResponseWriter, r *http.Request, a *Actor) {
 	acc, act := r.PathValue("acc"), r.PathValue("action")
-	if acc == a.Acc && (act == "disable" || act == "reset-mfa") {
+	if acc == a.Acc && (act == "disable" || act == "reset-mfa" || act == "reset-password") {
 		writeErr(w, http.StatusForbidden, "不能对当前登录账号执行此操作")
 		return
 	}
@@ -292,6 +297,14 @@ func (s *Server) handleAdminAction(w http.ResponseWriter, r *http.Request, a *Ac
 			}
 			ad.Status, revoke = "disabled", true
 			s.auditIn(d, a, "权限变更", "禁用管理员账号 "+acc, true, "")
+		case "reset-password":
+			if ad.Role == "super" && a.BaseRole != "super" {
+				return http.StatusForbidden, fail("只有超级管理员可以重置超级管理员口令")
+			}
+			if err := s.adminResetPassword(d, a, ad, res); err != nil {
+				return http.StatusInternalServerError, fail("生成口令失败")
+			}
+			revoke = true
 		case "reset-mfa", "force-mfa":
 			ad.MFA, ad.TOTPSecret, revoke = true, auth.NewTOTPSecret(), true
 			res["otpauth"] = auth.OTPAuthURI("OpenDLP", ad.Acc, ad.TOTPSecret)
@@ -602,7 +615,7 @@ func (s *Server) backup(ctx context.Context) (string, int64, error) {
 var settingKinds = map[string]string{
 	"ocr": "bool", "edm": "bool", "fp": "bool", "ml": "bool", "mail": "bool", "wecom": "bool", "ding": "bool", "siem": "bool", "evi": "bool", "mask": "bool",
 	"sens": "num", "freq": "str", "ret1": "str", "ret2": "str", "comp": "list",
-	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date", "consoleUrl": "url",
+	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date", "consoleUrl": "url", "pwdMaxAge": "days",
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, a *Actor) {
@@ -630,6 +643,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, a *Actor
 		case "list":
 			l, ok := v.([]any)
 			valid = ok && len(l) <= 20
+		case "days":
+			f, ok := v.(float64)
+			valid = ok && (f == 0 || f == 30 || f == 60 || f == 90 || f == 180 || f == 365)
 		case "seats":
 			f, ok := v.(float64)
 			valid = ok && f >= 0 && f <= 10_000_000 && f == float64(int(f))

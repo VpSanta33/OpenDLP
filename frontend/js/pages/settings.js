@@ -36,6 +36,8 @@
           <div class="set-row"><div><b>许可编号</b><small>由软件供应商提供</small></div><input class="input" data-k="licenseNo" value="${esc(val('licenseNo', ''))}" maxlength="40"></div>
           <div class="set-row"><div><b>授权终端数</b><small>用于终端授权用量统计</small></div><input class="input" type="number" min="0" data-k="licenseSeats" value="${val('licenseSeats', 0)}"></div>
           <div class="set-row"><div><b>到期日期</b><small>到期前 30 天在运维页提醒</small></div><input class="input" type="date" data-k="licenseExpiry" value="${esc(val('licenseExpiry', ''))}"></div>`, { sub: '许可证信息' })}
+        ${card('账号安全', `
+          <div class="set-row"><div><b>管理员口令有效期</b><small>到期后登录须先修改口令；初始口令与重置后的口令首次登录必须修改</small></div><select class="input" data-k="pwdMaxAge" data-num>${[[30, '30 天'], [60, '60 天'], [90, '90 天'], [180, '180 天'], [365, '365 天'], [0, '不过期']].map(([v, t]) => `<option value="${v}" ${+val('pwdMaxAge', 90) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`, { sub: '身份鉴别（等保 2.0）' })}
         ${card('数据保留', `
           ${sel('ret1', '事件记录保留', '超期后自动归档至冷存储', ['90 天', '180 天', '365 天', '永久'], '365 天')}
           ${sel('ret2', '审计日志保留', '等保 2.0 要求不少于 180 天', ['180 天', '365 天', '3 年'], '180 天')}
@@ -54,7 +56,7 @@
       root.querySelector('#discard').addEventListener('click', () => { UI.rerender(); toast('已放弃未保存的更改', { type: 'info' }); });
       root.querySelector('#save').addEventListener('click', e => {
         const body = {};
-        $$('[data-k]', root).forEach(el => { body[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.type === 'range' || el.type === 'number' ? +el.value : el.value; });
+        $$('[data-k]', root).forEach(el => { body[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.type === 'range' || el.type === 'number' || el.hasAttribute('data-num') ? +el.value : el.value; });
         body.comp = $$('#comp .chip.on', root).map(c => c.dataset.c);
         act(e.currentTarget, () => API.put('/settings', body), r => {
           D.settings = r.settings; bar.classList.remove('show');

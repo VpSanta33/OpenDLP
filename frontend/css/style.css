@@ -1737,3 +1737,8 @@ mark.hl.bad { background: transparent; border-bottom: 2px dashed var(--muted); c
 /* 告警通道投递统计 */
 .ig-dl{display:block;margin-top:3px;font-size:11.5px;color:var(--success,#16a34a)}
 .ig-dl.bad{color:var(--danger,#dc2626)}
+
+/* 表格内的文字按钮 */
+.link-btn{background:none;border:0;padding:0;color:var(--primary);cursor:pointer;font:inherit;text-align:left}
+.link-btn:hover{text-decoration:underline}
+.link-btn:disabled{color:inherit;cursor:default;text-decoration:none}

@@ -222,31 +222,36 @@ type Ops struct {
 type Matrix map[string]Ops
 
 type Admin struct {
-	Acc         string `json:"acc"`
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	MFA         bool   `json:"mfa"`
-	IP          string `json:"ip"`
-	Status      string `json:"status"` // active | locked | disabled
-	Last        int64  `json:"last"`
-	Created     int64  `json:"created"`
-	PwdHash     string `json:"pwdHash"`
-	TOTPSecret  string `json:"totpSecret"`
-	Failed      int    `json:"failed"`
-	LockedUntil int64  `json:"lockedUntil"`
-	PwdChanged  int64  `json:"pwdChanged"`
+	Acc         string   `json:"acc"`
+	Name        string   `json:"name"`
+	Role        string   `json:"role"`
+	MFA         bool     `json:"mfa"`
+	IP          string   `json:"ip"`              // 最近一次登录来源 IP
+	Allow       []string `json:"allow,omitempty"` // 允许登录的来源 IP / CIDR，空表示不限制
+	Status      string   `json:"status"`          // active | locked | disabled
+	Last        int64    `json:"last"`
+	Created     int64    `json:"created"`
+	PwdHash     string   `json:"pwdHash"`
+	TOTPSecret  string   `json:"totpSecret"`
+	Failed      int      `json:"failed"`
+	LockedUntil int64    `json:"lockedUntil"`
+	PwdChanged  int64    `json:"pwdChanged"`
+	MustChange  bool     `json:"mustChange,omitempty"` // 初始口令 / 被重置后首次登录须修改
 }
 
 // AdminView 对外展示的管理员信息（不含任何凭据）。
 type AdminView struct {
-	Acc     string `json:"acc"`
-	Name    string `json:"name"`
-	Role    string `json:"role"`
-	MFA     bool   `json:"mfa"`
-	IP      string `json:"ip"`
-	Status  string `json:"status"`
-	Last    int64  `json:"last"`
-	Created int64  `json:"created"`
+	Acc        string   `json:"acc"`
+	Name       string   `json:"name"`
+	Role       string   `json:"role"`
+	MFA        bool     `json:"mfa"`
+	IP         string   `json:"ip"`
+	Allow      []string `json:"allow"`
+	Status     string   `json:"status"`
+	Last       int64    `json:"last"`
+	Created    int64    `json:"created"`
+	PwdChanged int64    `json:"pwdChanged"`
+	MustChange bool     `json:"mustChange"`
 }
 
 func (a *Admin) View() AdminView {
@@ -254,7 +259,11 @@ func (a *Admin) View() AdminView {
 	if st == "disabled" {
 		st = "locked"
 	}
-	return AdminView{a.Acc, a.Name, a.Role, a.MFA, a.IP, st, a.Last, a.Created}
+	allow := a.Allow
+	if allow == nil {
+		allow = []string{}
+	}
+	return AdminView{a.Acc, a.Name, a.Role, a.MFA, a.IP, allow, st, a.Last, a.Created, a.PwdChanged, a.MustChange}
 }
 
 type Node struct {
@@ -299,6 +308,9 @@ type Schedule struct {
 	Fmt  string   `json:"fmt"`
 	On   bool     `json:"on"`
 	Next int64    `json:"next"`
+	// 最近一次执行结果
+	LastAt  int64  `json:"lastAt,omitempty"`
+	LastErr string `json:"lastErr,omitempty"`
 }
 
 type Report struct {

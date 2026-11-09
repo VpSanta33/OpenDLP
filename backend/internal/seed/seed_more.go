@@ -207,10 +207,10 @@ func seedOps(d *store.Data, r *Rand, now int64) {
 		}
 	}
 	d.ReportSchedules = []*store.Schedule{
-		{ID: "RS-01", Name: "数据安全合规月报", Tpl: "monthly", Cron: "每月 1 日 08:00", To: []string{"CISO", "合规委员会"}, Fmt: "HTML", On: true, Next: now + 22*dayMs},
-		{ID: "RS-02", Name: "事件处置周报", Tpl: "weekly", Cron: "每周一 09:00", To: []string{"安全运营组"}, Fmt: "HTML", On: true, Next: now + dayMs},
-		{ID: "RS-03", Name: "部门风险排名", Tpl: "dept", Cron: "每月 5 日 10:00", To: []string{"各部门负责人"}, Fmt: "CSV", On: true, Next: now + 26*dayMs},
-		{ID: "RS-04", Name: "高管安全简报", Tpl: "exec", Cron: "每季度首日 09:00", To: []string{"CEO", "CIO"}, Fmt: "HTML", On: false, Next: now + 53*dayMs},
+		{ID: "RS-01", Name: "数据安全合规月报", Tpl: "monthly", Cron: "每月 1 日 08:00", To: []string{"ciso@corp.example", "compliance@corp.example"}, Fmt: "HTML", On: true, Next: now + 22*dayMs},
+		{ID: "RS-02", Name: "事件处置周报", Tpl: "weekly", Cron: "每周一 09:00", To: []string{"soc@corp.example"}, Fmt: "HTML", On: true, Next: now + dayMs},
+		{ID: "RS-03", Name: "部门风险排名", Tpl: "dept", Cron: "每月 5 日 10:00", To: []string{"dept-heads@corp.example"}, Fmt: "CSV", On: true, Next: now + 26*dayMs},
+		{ID: "RS-04", Name: "高管安全简报", Tpl: "exec", Cron: "每季度首日 09:00", To: []string{"ceo@corp.example", "cio@corp.example"}, Fmt: "HTML", On: false, Next: now + 53*dayMs},
 	}
 	d.Seq["schedule"] = 4
 	hist := [][4]string{{"数据安全合规月报（2026 年 10 月）", "monthly", "HTML", "定时任务"}, {"事件处置周报（第 45 周）", "weekly", "HTML", "定时任务"}, {"事件处置周报（第 44 周）", "weekly", "HTML", "定时任务"},

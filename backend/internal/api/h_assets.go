@@ -449,15 +449,29 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request, a 
 		return
 	}
 	title, ok := reportTpl[req.Tpl]
-	if !ok || strings.TrimSpace(req.Cron) == "" || len(req.To) == 0 || len(req.To) > 20 {
-		writeErr(w, http.StatusUnprocessableEntity, "请选择模板、执行周期与至少一位接收人")
+	if !ok {
+		writeErr(w, http.StatusUnprocessableEntity, "报表模板不存在")
+		return
+	}
+	c, err := parseCron(req.Cron)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	to, err := parseRecipients(req.To)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	if req.Fmt != "CSV" {
 		req.Fmt = "HTML"
 	}
 	s.mutate(w, func(d *store.Data) (int, any) {
-		sc := &store.Schedule{ID: fmt.Sprintf("RS-%02d", store.NextSeq(d, "schedule")), Name: title, Tpl: req.Tpl, Cron: req.Cron, To: req.To, Fmt: req.Fmt, On: true, Next: time.Now().Add(72 * time.Hour).UnixMilli()}
+		if len(d.ReportSchedules) >= 50 {
+			return http.StatusUnprocessableEntity, fail("定时报表最多 50 个")
+		}
+		sc := &store.Schedule{ID: fmt.Sprintf("RS-%02d", store.NextSeq(d, "schedule")), Name: title, Tpl: req.Tpl, Cron: strings.TrimSpace(req.Cron), To: to, Fmt: req.Fmt, On: true,
+			Next: c.next(time.Now(), s.St.Loc).UnixMilli()}
 		d.ReportSchedules = append([]*store.Schedule{sc}, d.ReportSchedules...)
 		s.auditIn(d, a, "配置变更", fmt.Sprintf("新建定时报表「%s」（%s）", sc.Name, sc.Cron), true, "")
 		return http.StatusCreated, sc
@@ -478,6 +492,9 @@ func (s *Server) handleSchedulePatch(w http.ResponseWriter, r *http.Request, a *
 		for _, sc := range d.ReportSchedules {
 			if sc.ID == id {
 				sc.On = *req.On
+				if c, err := parseCron(sc.Cron); err == nil && sc.On {
+					sc.Next = c.next(time.Now(), s.St.Loc).UnixMilli()
+				}
 				s.auditIn(d, a, "配置变更", fmt.Sprintf("%s定时报表「%s」", map[bool]string{true: "启用", false: "暂停"}[sc.On], sc.Name), true, "")
 				return http.StatusOK, sc
 			}
@@ -486,19 +503,44 @@ func (s *Server) handleSchedulePatch(w http.ResponseWriter, r *http.Request, a *
 	})
 }
 
+// POST /api/v1/report-schedules/{id}/run —— 立即执行一次：生成、归档并发送邮件，同时提供下载。
 func (s *Server) handleScheduleRun(w http.ResponseWriter, r *http.Request, a *Actor) {
 	id := r.PathValue("id")
-	var req reportReq
+	var name string
 	s.St.Read(func(d *store.Data) {
 		for _, sc := range d.ReportSchedules {
 			if sc.ID == id {
-				req = reportReq{Tpl: sc.Tpl, Range: "lm", Fmt: sc.Fmt}
+				name = sc.Name
 			}
 		}
 	})
-	if req.Tpl == "" {
+	if name == "" {
 		writeErr(w, http.StatusNotFound, "定时报表不存在")
 		return
 	}
-	s.startReport(w, a, req)
+	s.audit(a, "数据导出", "立即执行定时报表「"+name+"」", true, "")
+	job := s.Jobs.Start(a.Acc, "report", name, time.Second, func() (string, string, []byte, error) {
+		fn, mime, data, _, err := s.runSchedule(context.Background(), id, time.Now(), a.Name)
+		if data != nil {
+			// 邮件发送失败不影响下载，执行结果已记录在定时报表与通知中心
+			return fn, mime, data, nil
+		}
+		return fn, mime, data, err
+	})
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+// DELETE /api/v1/report-schedules/{id}
+func (s *Server) handleScheduleDelete(w http.ResponseWriter, r *http.Request, a *Actor) {
+	id := r.PathValue("id")
+	s.mutate(w, func(d *store.Data) (int, any) {
+		for i, sc := range d.ReportSchedules {
+			if sc.ID == id {
+				d.ReportSchedules = append(d.ReportSchedules[:i], d.ReportSchedules[i+1:]...)
+				s.auditIn(d, a, "配置变更", "删除定时报表「"+sc.Name+"」", true, "")
+				return http.StatusOK, map[string]bool{"ok": true}
+			}
+		}
+		return http.StatusNotFound, fail("定时报表不存在")
+	})
 }
