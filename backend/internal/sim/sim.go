@@ -70,12 +70,12 @@ func tickNodes(srv *api.Server) {
 	srv.PublishNodes()
 }
 
-// heartbeats 模拟在线终端的心跳（离线终端保持离线）。
+// heartbeats 模拟在线终端的心跳（离线终端保持离线；已接入真实 Agent 的终端不模拟）。
 func heartbeats(srv *api.Server) {
 	now := time.Now().UnixMilli()
 	srv.St.Write(func(d *store.Data) {
 		for _, e := range d.Endpoints {
-			if e.Status != "offline" {
+			if e.Status != "offline" && !e.Enrolled {
 				e.LastSeen = now
 				e.CPU = clamp(e.CPU+rand.IntN(11)-5, 2, 95)
 			}

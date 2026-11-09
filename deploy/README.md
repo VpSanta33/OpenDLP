@@ -57,3 +57,10 @@ docker compose exec -T db pg_restore -U opendlp -d opendlp --clean < opendlp-202
 - 只有 Caddy 对外暴露端口；`app` 以 `OPENDLP_TRUST_PROXY=true` 运行，Cookie 带 Secure 标记。
 - 如果使用已有的负载均衡器或 Nginx，可删除 `caddy` 服务，但需保证：终止 HTTPS、转发 `X-Forwarded-For`、保留原始 Host，并对 `/api/v1/stream` 关闭响应缓冲（SSE）。
 - 本仓库在开发环境中未能实际构建镜像（开发机未运行 Docker 守护进程），首次部署时请留意构建输出。
+
+## 终端 Agent
+
+1. 服务端设置 `OPENDLP_AGENT_TOKEN`（注册令牌），并在「系统设置 → 告警通知 → 控制台访问地址」填写终端可访问的 HTTPS 地址。
+2. 在 `backend/` 下执行 `scripts/build-agent.sh <版本>`，产物位于 `backend/bin/agent/`（附 SHA256SUMS）。
+3. 按平台使用 `deploy/agent/` 中的 systemd 单元、launchd plist 或 `install-windows.ps1` 安装；也可在控制台「终端管理 → 终端接入」查看带令牌的安装步骤。
+4. 建议通过软件分发平台（SCCM / Jamf / 统信软件中心）批量下发二进制与配置文件，配置文件权限保持 0600。

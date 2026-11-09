@@ -199,6 +199,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
               <div class="field"><label class="lbl">数据分类</label><select class="input" id="eCat">${Object.entries(CAT).map(([k, v]) => `<option value="${k}" ${k === r.cat ? 'selected' : ''}>${v[0]}</option>`).join('')}</select></div>
               <div class="field"><label class="lbl">规则类型</label><select class="input" id="eType"><option value="regex" ${isRe ? 'selected' : ''}>正则表达式</option><option value="keyword" ${r.type === 'keyword' ? 'selected' : ''}>关键词词典</option></select></div>
             </div>
+            <div class="field"><label class="lbl">关联数据类型 <span class="hint">策略按数据类型匹配，未关联的规则仅用于识别测试</span></label><select class="input" id="eDt"><option value="">不关联</option>${D.dataTypes.map(t => `<option value="${esc(t.key)}" ${t.key === r.dataType ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
             <div class="field"><label class="lbl" id="ePatL">${isRe || r.type !== 'keyword' ? '正则表达式' : '关键词（每行一个）'} <em>*</em><span class="hint" id="eHint"></span></label>
               <textarea class="input mono" id="ePat" rows="3" placeholder="例如：EMP-\\d{6}">${esc(r.type === 'keyword' ? r.cfg.words.join('\n') : (r.cfg.src || ''))}</textarea><div class="field-err" id="ePatErr"></div></div>
             <div class="field"><label class="lbl">快速验证 <span class="hint">输入示例文本</span></label><input class="input" id="eTry" value="员工 EMP-208431 的工单"><div class="try-r" id="eTryR"></div></div>
@@ -227,7 +228,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
           if (!name) { g('#eName').classList.add('err', 'shake'); g('#eNameErr').classList.add('show'); setTimeout(() => g('#eName').classList.remove('shake'), 500); return; }
           const rule = check();
           if (!rule) { if (rule === null) { g('#ePatErr').textContent = '请填写规则内容'; g('#ePatErr').classList.add('show'); g('#ePat').classList.add('err'); } return; }
-          const body = { name, cat: rule.cat, type: rule.type, cfg: rule.cfg };
+          const body = { name, cat: rule.cat, type: rule.type, cfg: rule.cfg, dataType: g('#eDt').value };
           act(e.currentTarget, () => editing ? API.put('/rules/' + encodeURIComponent(src.id), body) : API.post('/rules', body), saved => {
             if (editing) Object.assign(src, saved); else D.rules.unshift(saved);
             cur = saved.id;

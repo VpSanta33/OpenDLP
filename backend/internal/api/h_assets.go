@@ -158,7 +158,10 @@ func (s *Server) handleDeployToken(w http.ResponseWriter, r *http.Request, a *Ac
 		return
 	}
 	s.audit(a, "终端操作", "查看终端接入令牌", true, "")
-	writeJSON(w, http.StatusOK, map[string]any{"token": s.Cfg.AgentToken, "heartbeat": "/api/v1/ingest/heartbeat", "detections": "/api/v1/ingest/detections"})
+	var server string
+	s.St.Read(func(d *store.Data) { server, _ = d.Settings["consoleUrl"].(string) })
+	writeJSON(w, http.StatusOK, map[string]any{"token": s.Cfg.AgentToken, "server": server, "agentVersion": s.Cfg.Version,
+		"heartbeat": "/api/v1/ingest/heartbeat", "detections": "/api/v1/ingest/detections"})
 }
 
 /* ---------- 审计 ---------- */
