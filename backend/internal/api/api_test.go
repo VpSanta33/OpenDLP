@@ -31,6 +31,9 @@ func newTestServer(t *testing.T, demo bool) (*Server, *httptest.Server) {
 	s := New(st, Config{AgentToken: "agent-token-for-tests", Version: "test"})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go s.Alerts.Run(ctx)
 	return s, ts
 }
 
@@ -384,5 +387,84 @@ func TestAgentProtocol(t *testing.T) {
 	}
 	if res, _ := agentReq(t, ts, "POST", "/api/v1/agent/heartbeat", cred, `{}`); res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("吊销后应返回 401，实际 %d", res.StatusCode)
+	}
+}
+
+// initAdmin 在生产模式空库中完成首次初始化并登录。
+func initAdmin(t *testing.T, s *Server, c *client) {
+	t.Helper()
+	tok := s.SetupToken("")
+	_, su := c.do("POST", "/api/v1/setup/begin", `{"token":"`+tok+`","account":"secadmin","name":"王安全","password":"`+testPW+`"}`, true)
+	otp, _ := auth.TOTPCode(su["secret"].(string), time.Now())
+	if code, _ := c.do("POST", "/api/v1/setup/complete", `{"enrollment":"`+su["enrollment"].(string)+`","code":"`+otp+`"}`, true); code != 200 {
+		t.Fatalf("初始化失败：%d", code)
+	}
+}
+
+func TestAlertDelivery(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	c := newClient(t, ts)
+	initAdmin(t, s, c)
+	got := make(chan string, 10)
+	bot := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		got <- m["markdown"].(map[string]any)["content"].(string)
+		w.Write([]byte(`{"errcode":0}`))
+	}))
+	defer bot.Close()
+	if code, out := c.do("PUT", "/api/v1/integrations/wecom", `{"config":{"Webhook 地址":"ftp://bad"},"enabled":true}`, true); code != http.StatusUnprocessableEntity {
+		t.Fatalf("无效 Webhook 应被拒绝：%d %v", code, out)
+	}
+	if code, out := c.do("PUT", "/api/v1/integrations/wecom", `{"config":{"Webhook 地址":"`+bot.URL+`"},"enabled":true}`, true); code != 200 {
+		t.Fatalf("保存集成失败：%d %v", code, out)
+	}
+	// 免认证 SMTP 中继：用户名 / 口令可留空
+	if code, out := c.do("PUT", "/api/v1/integrations/smtp", `{"config":{"SMTP 服务器":"relay.corp.example:25","加密方式":"none","发件人":"dlp@corp.example","收件人":"sec@corp.example","用户名":"","口令":""},"enabled":true}`, true); code != 200 {
+		t.Fatalf("可选字段留空应允许保存：%d %v", code, out)
+	}
+	if code, _ := c.do("PUT", "/api/v1/integrations/smtp", `{"config":{"SMTP 服务器":"","发件人":"dlp@corp.example","收件人":"sec@corp.example"},"enabled":true}`, true); code != http.StatusUnprocessableEntity {
+		t.Fatalf("必填字段为空应被拒绝：%d", code)
+	}
+	// 「测试连接」真实发送测试消息
+	if _, out := c.do("POST", "/api/v1/integrations/wecom/test", `{}`, true); out["ok"] != true {
+		t.Fatalf("测试消息发送失败：%v", out)
+	}
+	if m := <-got; !strings.Contains(m, "通道测试") {
+		t.Fatalf("测试消息内容错误：%s", m)
+	}
+	// 严重事件立即推送；低危事件进入汇总，不立即推送
+	c.agent("/api/v1/ingest/detections", `[{"user":"张伟","host":"H1","channel":"usb","dataType":"source","file":"core.zip","action":"block","severity":"critical"},{"user":"李娜","host":"H2","channel":"email","dataType":"phone","file":"a.csv","action":"audit","severity":"low"}]`)
+	select {
+	case m := <-got:
+		if !strings.Contains(m, "core.zip") || !strings.Contains(m, "严重") {
+			t.Fatalf("告警内容错误：%s", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("严重事件未推送到企业微信")
+	}
+	select {
+	case m := <-got:
+		t.Fatalf("低危事件不应立即推送：%s", m)
+	case <-time.After(500 * time.Millisecond):
+	}
+	var ok int
+	s.St.Read(func(d *store.Data) {
+		for _, it := range d.Integrations {
+			if it.Key == "wecom" && it.Delivery != nil {
+				ok = it.Delivery.OK
+			}
+		}
+	})
+	if ok < 2 {
+		t.Fatalf("投递统计未记录：%d", ok)
+	}
+	// 关闭「系统设置 → 企业微信」开关后不再推送
+	c.do("PUT", "/api/v1/settings", `{"wecom":false}`, true)
+	c.agent("/api/v1/ingest/detections", `[{"user":"张伟","host":"H1","channel":"usb","dataType":"source","file":"x.zip","action":"block","severity":"critical"}]`)
+	select {
+	case m := <-got:
+		t.Fatalf("关闭开关后不应推送：%s", m)
+	case <-time.After(500 * time.Millisecond):
 	}
 }

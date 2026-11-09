@@ -1733,3 +1733,7 @@ mark.hl.bad { background: transparent; border-bottom: 2px dashed var(--muted); c
     transition-duration: .01ms !important;
   }
 }
+
+/* 告警通道投递统计 */
+.ig-dl{display:block;margin-top:3px;font-size:11.5px;color:var(--success,#16a34a)}
+.ig-dl.bad{color:var(--danger,#dc2626)}

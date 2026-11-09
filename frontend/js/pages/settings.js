@@ -7,6 +7,10 @@
   const sw = (key, title, desc, on) => `<label class="set-row"><div><b>${title}</b><small>${desc}</small></div><span class="switch"><input type="checkbox" data-k="${key}" ${val(key, on) ? 'checked' : ''}><span></span></span></label>`;
   const sel = (key, title, desc, opts, v) => `<div class="set-row"><div><b>${title}</b><small>${desc}</small></div><select class="input" data-k="${key}">${opts.map(o => `<option ${o === val(key, v) ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
 
+  // 告警通道说明取自「运维中心 → 第三方集成」中的真实配置
+  const integ = k => (D.integrations || []).find(i => i.key === k);
+  const chDesc = (k, fn) => { const it = integ(k); return it && it.st !== 'off' && it.config ? fn(it.config) : '未配置，请在「运维中心 → 第三方集成」中设置'; };
+
   UI.pages.settings = {
     title: '系统设置', icon: 'settings',
     html() {
@@ -20,10 +24,11 @@
           ${sw('ml', '机器学习分类器', '自动识别合同、简历、源代码等文档类别', false)}
           <div class="set-row slider"><div class="set-top"><div><b>检测灵敏度</b><small>灵敏度越高，误报率可能随之上升</small></div><span class="sens-v" id="sensV">${val('sens', 75)}</span></div><input type="range" class="range" min="10" max="100" value="${val('sens', 75)}" data-k="sens"></div>`, { sub: '内容识别能力与性能平衡' })}
         ${card('告警通知', `
-          ${sw('mail', '邮件通知', 'security-team@corp.com', true)}
-          ${sw('wecom', '企业微信', '推送至「数据安全响应」群', true)}
-          ${sw('ding', '钉钉', '未配置机器人 Webhook', false)}
-          ${sw('siem', 'SIEM / Syslog 转发', '转发至 10.0.2.15:514 (CEF 格式)', true)}
+          ${sw('mail', '邮件通知', esc(chDesc('smtp', c => '发送至 ' + (c['收件人'] || '—'))), false)}
+          ${sw('wecom', '企业微信', esc(chDesc('wecom', () => '群机器人已配置')), false)}
+          ${sw('ding', '钉钉', esc(chDesc('ding', c => '群机器人已配置' + (c['加签密钥'] ? '（加签）' : ''))), false)}
+          ${sw('siem', 'SIEM / Syslog 转发', esc(chDesc('siem', c => `转发至 ${c['Syslog 地址']}${String(c['Syslog 地址']).includes(':') ? '' : ':' + (c['端口'] || 514)}（${(c['协议'] || 'udp').toUpperCase()}，CEF 格式）`)), false)}
+          <div class="set-row"><div><b>控制台访问地址</b><small>告警消息中「查看详情」链接的前缀</small></div><input class="input" data-k="consoleUrl" value="${esc(val('consoleUrl', ''))}" placeholder="https://dlp.corp.example" maxlength="200"></div>
           ${sel('freq', '告警汇总频率', '中低危事件合并推送的时间间隔', ['实时', '每 15 分钟', '每小时', '每日汇总'], '每 15 分钟')}`, { sub: '事件告警推送渠道' })}
         ${card('合规模板', `<div class="chips" id="comp">${['《个人信息保护法》PIPL', '《数据安全法》', '等保 2.0', 'GDPR', 'PCI-DSS', 'HIPAA', 'ISO 27001', 'SOX 法案'].map(n => `<span class="chip ${val('comp', []).includes(n) ? 'on' : ''}" data-c="${esc(n)}">${ic('check')}${n}</span>`).join('')}</div>
           <p class="muted small" style="margin-top:14px">启用的合规模板将自动生成对应识别规则与月度合规报告。</p>`, { sub: '内置法规识别规则包' })}

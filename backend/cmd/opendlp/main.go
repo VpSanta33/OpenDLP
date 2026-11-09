@@ -129,6 +129,7 @@ func run(o options) error {
 	if created {
 		slog.Info("数据库已初始化基础数据（内置角色、识别规则、渠道字典）")
 	}
+	st.Write(seed.EnsureIntegrations) // 升级时补齐新增的集成项
 	if o.demo {
 		n, err := st.CountIncidents(ctx, store.IncidentFilter{})
 		if err != nil {
@@ -163,6 +164,7 @@ func run(o options) error {
 	saved := make(chan struct{})
 	go func() { st.RunSaver(ctx, 2*time.Second); close(saved) }()
 	go srv.RunMaintenance(ctx)
+	go srv.Alerts.Run(ctx)
 	if o.demo {
 		go sim.Run(ctx, srv)
 	}

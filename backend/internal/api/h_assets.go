@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"opendlp/internal/notify"
 	"opendlp/internal/store"
 )
 
@@ -183,6 +184,9 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request, a *Ac
 		return
 	}
 	s.audit(a, "配置变更", fmt.Sprintf("执行审计日志完整性校验（%d 条）", n), bad == "", map[bool]string{true: "", false: "哈希链在 " + bad + " 处断裂"}[bad == ""])
+	if bad != "" {
+		s.Alerts.Human(notify.Message{Title: "审计日志完整性校验失败", Severity: "critical", Text: "哈希链在 " + bad + " 处断裂，审计日志可能被篡改", Link: "#/audit", Event: "audit"})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": n, "ok": bad == "", "broken": bad})
 }
 

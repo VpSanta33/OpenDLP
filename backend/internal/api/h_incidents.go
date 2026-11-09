@@ -138,7 +138,7 @@ func (s *Server) RecordIncident(ctx context.Context, inc *store.Incident, enrich
 		}
 		inc.ID = id
 	}
-	var chName string
+	var chName, dtName string
 	s.St.Write(func(d *store.Data) {
 		if enrich != nil {
 			enrich(d, inc)
@@ -151,7 +151,7 @@ func (s *Server) RecordIncident(ctx context.Context, inc *store.Incident, enrich
 				}
 			}
 		}
-		chName = d.ChannelName(inc.Channel)
+		chName, dtName = d.ChannelName(inc.Channel), d.DataTypeName(inc.DataType)
 	})
 	if err := s.St.InsertIncident(ctx, inc); err != nil {
 		return err
@@ -160,6 +160,7 @@ func (s *Server) RecordIncident(ctx context.Context, inc *store.Incident, enrich
 		slog.Error("累加检测量失败", "err", err)
 	}
 	s.Hub.Publish(Event{Name: "incident", Module: "dashboard", Data: *inc})
+	s.Alerts.Incident(*inc, chName, dtName)
 	if inc.Severity == "critical" {
 		s.addNote("danger", "严重事件", fmt.Sprintf("%s 尝试通过%s外发 %s，处置：%s", inc.User, chName, inc.File, actName[inc.Action]), "#/incidents?sev=critical")
 	}

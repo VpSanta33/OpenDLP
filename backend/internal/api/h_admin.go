@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"opendlp/internal/auth"
+	"opendlp/internal/notify"
 	"opendlp/internal/store"
 )
 
@@ -338,7 +339,7 @@ func (s *Server) handleOpsMetrics(w http.ResponseWriter, r *http.Request, a *Act
 	})
 }
 
-var secretKey = regexp.MustCompile(`(?i)key|secret|token|password|密码|口令|令牌`)
+var secretKey = regexp.MustCompile(`(?i)key|secret|token|password|密码|口令|令牌|密钥`)
 
 func maskIntegration(it *store.Integration) store.Integration {
 	cp := *it
@@ -376,6 +377,17 @@ func (s *Server) handleIntegrationTest(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	res := map[string]any{"ok": false}
+	if _, isAlert := channelToggle[key]; isAlert && it.St != "off" && !s.Cfg.Demo {
+		err := s.Alerts.sendNow(r.Context(), key, notify.Message{Title: "OpenDLP 告警通道测试", Severity: "info", Event: "test",
+			Text: "这是一条测试消息，收到说明通道配置正确。\n发起人：" + a.Name, Link: "#/ops"})
+		res["ok"], res["message"] = err == nil, map[bool]string{true: "测试消息已发送，请在接收端确认", false: ""}[err == nil]
+		if err != nil {
+			res["message"] = "发送失败：" + err.Error()
+		}
+		s.audit(a, "配置变更", "测试告警通道「"+it.Name+"」", err == nil, fmt.Sprint(map[bool]any{true: "", false: res["message"]}[err == nil]))
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
 	switch {
 	case it.St == "off":
 		res["message"] = "尚未配置，请先完成配置"
@@ -433,6 +445,9 @@ func probeAddr(cfg map[string]string) string {
 	return ""
 }
 
+// optionalIntegField 允许留空的集成配置项（例如免认证的内网 SMTP 中继、未启用加签的钉钉机器人）。
+var optionalIntegField = map[string]bool{"用户名": true, "口令": true, "加签密钥": true, "加密方式": true, "端口": true, "协议": true}
+
 func (s *Server) handleIntegrationSave(w http.ResponseWriter, r *http.Request, a *Actor) {
 	var req struct {
 		Config  map[string]string `json:"config"`
@@ -453,10 +468,13 @@ func (s *Server) handleIntegrationSave(w http.ResponseWriter, r *http.Request, a
 			if v == "******" { // 掩码值表示保持原密钥不变
 				v = it.Config[k]
 			}
-			if v == "" || len(v) > 500 || len(k) > 40 {
+			if (v == "" && !optionalIntegField[k]) || len(v) > 500 || len(k) > 40 {
 				return http.StatusUnprocessableEntity, fail("配置项「" + k + "」不能为空且不超过 500 字符")
 			}
 			cfg[k] = v
+		}
+		if msg := validateIntegration(key, cfg); msg != "" && req.Enabled {
+			return http.StatusUnprocessableEntity, fail(msg)
 		}
 		it.Config = cfg
 		if req.Enabled {
@@ -584,7 +602,7 @@ func (s *Server) backup(ctx context.Context) (string, int64, error) {
 var settingKinds = map[string]string{
 	"ocr": "bool", "edm": "bool", "fp": "bool", "ml": "bool", "mail": "bool", "wecom": "bool", "ding": "bool", "siem": "bool", "evi": "bool", "mask": "bool",
 	"sens": "num", "freq": "str", "ret1": "str", "ret2": "str", "comp": "list",
-	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date",
+	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date", "consoleUrl": "url",
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, a *Actor) {
@@ -615,6 +633,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, a *Actor
 		case "seats":
 			f, ok := v.(float64)
 			valid = ok && f >= 0 && f <= 10_000_000 && f == float64(int(f))
+		case "url":
+			sv, ok := v.(string)
+			valid = ok && (sv == "" || notify.CheckWebhook(sv) == nil) && len(sv) <= 200
 		case "date":
 			sv, ok := v.(string)
 			_, err := time.Parse("2006-01-02", sv)
@@ -642,4 +663,32 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, a *Actor
 		}
 		return http.StatusOK, map[string]any{"settings": d.Settings, "changed": changed}
 	})
+}
+
+// validateIntegration 告警通道配置的格式校验。
+func validateIntegration(key string, c map[string]string) string {
+	switch key {
+	case "smtp":
+		if _, _, err := net.SplitHostPort(c["SMTP 服务器"]); err != nil {
+			return "SMTP 服务器须为 host:port，例如 smtp.corp.example:587"
+		}
+		if !strings.Contains(c["发件人"], "@") || !strings.Contains(c["收件人"], "@") {
+			return "请填写有效的发件人与收件人邮箱（多个收件人用逗号分隔）"
+		}
+		if v := c["加密方式"]; v != "" && v != "starttls" && v != "tls" && v != "none" {
+			return "加密方式须为 starttls、tls 或 none"
+		}
+	case "wecom", "ding":
+		if notify.CheckWebhook(c["Webhook 地址"]) != nil {
+			return "请填写有效的机器人 Webhook 地址"
+		}
+	case "siem":
+		if c["Syslog 地址"] == "" {
+			return "请填写 Syslog 地址"
+		}
+		if v := strings.ToLower(c["协议"]); v != "" && v != "udp" && v != "tcp" {
+			return "协议须为 udp 或 tcp"
+		}
+	}
+	return ""
 }

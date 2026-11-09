@@ -194,10 +194,10 @@ func seedOps(d *store.Data, r *Rand, now int64) {
 		"siem":  {"Syslog 地址": "10.0.2.15", "端口": "514", "格式": "CEF"},
 		"mail":  {"服务地址": "mx-gw.corp.example:25"},
 		"proxy": {"服务地址": "icap://dlp-gw-02:1344"},
-		"wecom": {"CorpID": "ww0000000000", "Secret": "demo-secret-value"},
+		"wecom": {"Webhook 地址": "https://webhook.corp.example/cgi-bin/webhook/send?key=demo"},
 	}
 	info := map[string]string{"ad": "corp.example · 84 用户 · 8 部门", "sso": "IdP: sso.corp.example，强制管理员 MFA", "siem": "10.0.2.15:514 · CEF 格式",
-		"mail": "mx-gw.corp.example · 旁路 + 阻断模式", "proxy": "dlp-gw-02 响应延迟偏高 (p95 820ms)", "wecom": "应用「数据安全助手」· 审批与告警推送"}
+		"mail": "mx-gw.corp.example · 旁路 + 阻断模式", "proxy": "dlp-gw-02 响应延迟偏高 (p95 820ms)", "wecom": "群机器人「数据安全响应」· 告警推送（演示）"}
 	for _, it := range d.Integrations {
 		if c, ok := cfgs[it.Key]; ok {
 			it.Config, it.Info, it.St = c, info[it.Key], "ok"
@@ -273,7 +273,9 @@ func baseIntegrations() []*store.Integration {
 		{Key: "mail", Name: "邮件网关 (MTA)", Cat: "外发通道", Icon: "mail", St: "off", Info: "未配置"},
 		{Key: "proxy", Name: "Web 代理 (ICAP)", Cat: "外发通道", Icon: "globe", St: "off", Info: "未配置"},
 		{Key: "casb", Name: "CASB 云应用安全", Cat: "外发通道", Icon: "cloud", St: "off", Info: "未配置，可扩展 SaaS 应用数据管控"},
-		{Key: "wecom", Name: "企业微信", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
+		{Key: "smtp", Name: "告警邮件 (SMTP)", Cat: "通知协同", Icon: "mail", St: "off", Info: "未配置，用于告警与定时报表邮件"},
+		{Key: "wecom", Name: "企业微信群机器人", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
+		{Key: "ding", Name: "钉钉机器人", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
 		{Key: "itsm", Name: "ITSM 工单系统", Cat: "通知协同", Icon: "list", St: "off", Info: "未配置，可将高危事件自动生成工单"},
 	}
 }
@@ -300,4 +302,17 @@ var ruleDataType = map[string]string{
 	"战略合同模板":         "contract",
 	"源代码分类模型":        "source",
 	"工程图纸文件类型":       "design",
+}
+
+// EnsureIntegrations 为旧版本数据补齐新增的集成项（须在写锁内调用）。
+func EnsureIntegrations(d *store.Data) {
+	for _, base := range baseIntegrations() {
+		found := false
+		for _, it := range d.Integrations {
+			found = found || it.Key == base.Key
+		}
+		if !found {
+			d.Integrations = append(d.Integrations, base)
+		}
+	}
 }

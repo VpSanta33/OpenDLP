@@ -25,6 +25,8 @@ func (s *Store) AppendAudit(ctx context.Context, e AuditEntry) error {
 	err := s.appendAudit(ctx, &e)
 	if err != nil {
 		slog.Error("写入审计日志失败", "err", err, "type", e.Type, "detail", e.Detail)
+	} else if s.OnAudit != nil {
+		s.OnAudit(e)
 	}
 	return err
 }

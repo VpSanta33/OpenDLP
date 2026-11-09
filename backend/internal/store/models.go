@@ -272,13 +272,22 @@ type Node struct {
 }
 
 type Integration struct {
-	Key    string            `json:"key"`
-	Name   string            `json:"name"`
-	Cat    string            `json:"cat"`
-	Icon   string            `json:"icon"`
-	St     string            `json:"st"` // ok | warn | off
-	Info   string            `json:"info"`
-	Config map[string]string `json:"config,omitempty"`
+	Key      string            `json:"key"`
+	Name     string            `json:"name"`
+	Cat      string            `json:"cat"`
+	Icon     string            `json:"icon"`
+	St       string            `json:"st"` // ok | warn | off
+	Info     string            `json:"info"`
+	Config   map[string]string `json:"config,omitempty"`
+	Delivery *Delivery         `json:"delivery,omitempty"` // 告警通道的投递统计
+}
+
+// Delivery 告警通道投递统计。
+type Delivery struct {
+	OK      int    `json:"ok"`
+	Fail    int    `json:"fail"`
+	LastAt  int64  `json:"lastAt"`
+	LastErr string `json:"lastErr,omitempty"`
 }
 
 type Schedule struct {

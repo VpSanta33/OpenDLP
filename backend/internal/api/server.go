@@ -41,6 +41,7 @@ type Server struct {
 	mux     *http.ServeMux
 	limiter *limiter
 	setup   *setupState
+	Alerts  *Alerts
 }
 
 // Actor 当前请求的操作者。
@@ -66,6 +67,8 @@ func New(st *store.Store, cfg Config) *Server {
 		limiter: newLimiter(10, 5*time.Minute),
 		setup:   newSetupState(),
 	}
+	s.Alerts = newAlerts(s)
+	st.OnAudit = s.Alerts.Audit
 	s.routes()
 	if cfg.Static != "" {
 		s.mux.Handle("GET /", staticHandler(cfg.Static))

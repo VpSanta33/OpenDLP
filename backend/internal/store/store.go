@@ -33,6 +33,8 @@ type Store struct {
 	dirty   atomic.Bool
 	auditMu sync.Mutex
 	Loc     *time.Location
+	// OnAudit 审计记录提交后的回调（用于转发 SIEM），可为 nil。
+	OnAudit func(AuditEntry)
 }
 
 // Open 连接数据库、执行迁移并加载配置文档；数据库为空时调用 seed 生成初始配置。

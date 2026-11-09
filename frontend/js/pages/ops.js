@@ -80,11 +80,17 @@
         paint();
       });
 
+      // 告警通道投递统计
+      function delivery(d) {
+        if (!d) return '';
+        const t = new Date(d.lastAt).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return `<small class="ig-dl${d.lastErr ? ' bad' : ''}" title="${esc(d.lastErr || '')}">已投递 ${fmt(d.ok)} · 失败 ${fmt(d.fail)} · 最近 ${t}${d.lastErr ? ' · ' + esc(d.lastErr.slice(0, 40)) : ''}</small>`;
+      }
       function renderInteg() {
         let cat = '';
         q('#integ').innerHTML = D.integrations.map((it, i) => {
           const head = it.cat !== cat ? `<div class="integ-cat">${(cat = it.cat)}</div>` : '';
-          return head + `<div class="ig ${it.st}" data-k="${it.key}" style="--i:${i}"><span class="ig-ic">${ic(it.icon)}</span><div class="ig-m"><b>${it.name}</b><small>${esc(it.info)}</small></div>
+          return head + `<div class="ig ${it.st}" data-k="${it.key}" style="--i:${i}"><span class="ig-ic">${ic(it.icon)}</span><div class="ig-m"><b>${it.name}</b><small>${esc(it.info)}</small>${delivery(it.delivery)}</div>
             <span class="tag ${IST[it.st][1]}">${IST[it.st][0]}</span>
             <div class="ig-a">${it.st === 'off' ? `<button class="btn btn-sm" data-cfg>${ic('link')}立即配置</button>` : `<button class="btn btn-sm btn-ghost" data-test>${ic('refresh')}测试连接</button><button class="btn btn-sm btn-ghost" data-cfg>${ic('settings')}配置</button>`}</div></div>`;
         }).join('');
@@ -99,23 +105,33 @@
         if (e.target.closest('[data-cfg]')) openCfg(it);
       });
       function openCfg(it) {
+        // [字段, 默认值, 可选]；字段名与服务端告警通道配置一致
         const tpl = {
+          smtp: [['SMTP 服务器', 'smtp.corp.example:587'], ['加密方式', 'starttls'], ['发件人', 'dlp@corp.example'], ['收件人', ''], ['用户名', '', 1], ['口令', '', 1]],
+          wecom: [['Webhook 地址', 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=']],
+          ding: [['Webhook 地址', 'https://oapi.dingtalk.com/robot/send?access_token='], ['加签密钥', '', 1]],
+          siem: [['Syslog 地址', ''], ['端口', '514'], ['协议', 'udp']],
           soar: [['平台地址', 'https://soar.corp.example'], ['API Key', '']],
           casb: [['租户 ID', ''], ['API 端点', 'https://api.casb.example']],
           itsm: [['ITSM 地址', 'https://itsm.corp.example'], ['工单类型', '安全事件']]
         }[it.key] || [['服务地址', ''], ['认证令牌', '']];
         // 已配置的集成使用服务端配置（密钥类字段以 ****** 掩码返回，保存时保持不变）
-        const fields = it.config && Object.keys(it.config).length ? Object.entries(it.config) : tpl;
+        const opt = new Set(tpl.filter(f => f[2]).map(f => f[0]));
+        const hint = { '加密方式': 'starttls / tls / none', '收件人': '多个邮箱用逗号分隔', '协议': 'udp / tcp' };
+        const fields = it.config && Object.keys(it.config).length ? Object.entries(it.config) : tpl.map(f => [f[0], f[1]]);
+        // 已有配置缺少模板字段时补齐（例如升级后新增的字段）
+        if (it.config) tpl.forEach(([l, v]) => { if (!(l in it.config)) fields.push([l, v]); });
         const { panel, close } = openLayer('modal', `
           <div class="md-head"><div><h2>${it.name}</h2><p>${it.cat} · ${esc(it.info)}</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
-          <div class="md-body">${fields.map(([l, v], k) => `<div class="field"><label class="lbl">${l}${v ? '' : ' <em>*</em>'}</label><input class="input" data-f="${esc(l)}" value="${esc(v)}" ${/key|secret|token|令牌|密码|口令/i.test(l) ? 'type="password" placeholder="请输入（加密存储）"' : ''}></div>`).join('')}
+          <div class="md-body">${fields.map(([l, v]) => `<div class="field"><label class="lbl">${esc(l)}${opt.has(l) ? ' <small class="muted">（可选）</small>' : ' <em>*</em>'}</label><input class="input" data-f="${esc(l)}" ${opt.has(l) ? 'data-opt' : ''} value="${esc(v)}" ${/key|secret|token|令牌|密码|口令|密钥/i.test(l) ? 'type="password" placeholder="请输入（加密存储）"' : hint[l] ? `placeholder="${hint[l]}"` : ''}></div>`).join('')}
             <label class="set-row"><div><b>启用该集成</b><small>保存后立即生效，可随时停用</small></div><span class="switch"><input type="checkbox" id="igOn" ${it.st !== 'off' || !it.config ? 'checked' : ''}><span></span></span></label></div>
           <div class="md-foot"><button class="btn" data-t>${ic('refresh')}测试连接</button><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok data-perm="ops:cfg">${ic('save')}保存</button></div>`);
         UI.applyPerms(panel);
         panel.querySelector('[data-t]').addEventListener('click', e => act(e.currentTarget, () => API.post(`/integrations/${encodeURIComponent(it.key)}/test`), r => toast(esc(r.message), { type: r.ok ? 'success' : 'error' })));
         panel.querySelector('[data-ok]').addEventListener('click', e => {
-          const empty = $$('input[data-f]', panel).filter(i => !i.value.trim());
-          $$('input[data-f]', panel).forEach(i => i.classList.toggle('err', !i.value.trim()));
+          const req = $$('input[data-f]:not([data-opt])', panel);
+          const empty = req.filter(i => !i.value.trim());
+          req.forEach(i => i.classList.toggle('err', !i.value.trim()));
           if (empty.length) { empty[0].focus(); return; }
           const config = Object.fromEntries($$('input[data-f]', panel).map(i => [i.dataset.f, i.value.trim()]));
           act(e.currentTarget, () => API.put('/integrations/' + encodeURIComponent(it.key), { config, enabled: panel.querySelector('#igOn').checked }), upd => {

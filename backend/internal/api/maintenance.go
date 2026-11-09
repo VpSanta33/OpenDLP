@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"opendlp/internal/notify"
 	"opendlp/internal/store"
 )
 
@@ -54,9 +56,11 @@ func (s *Server) RunMaintenance(ctx context.Context) {
 			s.Hub.Publish(Event{Name: "approvals.changed", Module: "approvals", Data: map[string]int{"expired": expired}})
 		}
 		if len(offline) > 0 {
+			s.Alerts.Human(notify.Message{Title: fmt.Sprintf("%d 台终端离线", len(offline)), Severity: "medium", Text: "超过 10 分钟无心跳：" + strings.Join(offline, "、"), Link: "#/endpoints", Event: "endpoint"})
 			s.addNote("warning", "终端离线", strings.Join(offline[:min(3, len(offline))], "、")+map[bool]string{true: " 等 " + strconv.Itoa(len(offline)) + " 台终端", false: ""}[len(offline) > 3]+" 超过 10 分钟无心跳", "#/endpoints")
 		}
 		if nodesChanged {
+			s.Alerts.Human(notify.Message{Title: "检测节点离线", Severity: "high", Text: "有检测节点超过 2 分钟未上报心跳，请检查集群状态", Link: "#/ops", Event: "node"})
 			s.addNote("danger", "检测节点离线", "有检测节点超过 2 分钟未上报心跳，请检查集群状态", "#/ops")
 			s.publishNodes()
 		}

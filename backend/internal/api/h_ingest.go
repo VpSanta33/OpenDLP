@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"opendlp/internal/notify"
 	"opendlp/internal/seed"
 	"opendlp/internal/store"
 )
@@ -317,6 +318,8 @@ func (s *Server) handleApprovalSubmit(w http.ResponseWriter, r *http.Request) {
 	s.Hub.Publish(Event{Name: "approvals.changed", Module: "approvals", Data: map[string]string{"id": a.ID}})
 	if a.Stage == 2 {
 		s.addNote("warning", "新的外发申请", a.User+" 申请外发 "+a.File+" 至 "+a.To, "#/approvals")
+		s.Alerts.Human(notify.Message{Title: "待审批：" + a.User + " 申请外发 " + a.File, Severity: map[bool]string{true: "high", false: "medium"}[a.Urgent],
+			Text: fmt.Sprintf("申请单：%s\n接收方：%s\n密级：%s\n理由：%s", a.ID, a.To, a.Level, a.Reason), Link: "#/approvals", Event: "approval"})
 	}
 	writeJSON(w, http.StatusCreated, a)
 }
