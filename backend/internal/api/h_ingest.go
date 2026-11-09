@@ -63,9 +63,14 @@ type ingestItem struct {
 	RuleIDs  []string `json:"ruleIds"`
 }
 
-// POST /api/v1/ingest/detections —— 终端 Agent / 网关上报检测结果。
+// POST /api/v1/ingest/detections —— 网关 / 共享令牌接入的终端上报检测结果。
 // action 为 allow 且未指定 severity 时仅计入检测量，否则生成 DLP 事件。
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+	s.ingestDetections(w, r, "")
+}
+
+// ingestDetections 处理检测上报；forcedHost 非空时（独立凭据的 Agent）忽略上报中的主机名，防止冒充其他终端。
+func (s *Server) ingestDetections(w http.ResponseWriter, r *http.Request, forcedHost string) {
 	var items []ingestItem
 	if !readJSON(w, r, &items) {
 		return
@@ -77,7 +82,11 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	created, counted, skipped := 0, 0, 0
 	now := time.Now()
 	for _, it := range items {
-		if it.TS == 0 || it.TS > now.Add(5*time.Minute).UnixMilli() {
+		if forcedHost != "" {
+			it.Host = forcedHost
+		}
+		// 离线补报允许 30 天内的历史数据，更早或未来的时间戳按当前时间处理
+		if it.TS == 0 || it.TS > now.Add(5*time.Minute).UnixMilli() || it.TS < now.AddDate(0, 0, -30).UnixMilli() {
 			it.TS = now.UnixMilli()
 		}
 		if !validKey(it.Channel, channelKeys) || !validKey(it.Action, actionKeys) || it.DataType == "" {
@@ -131,13 +140,16 @@ func enqueue(d *store.Data, host, action, by string) *store.Command {
 	return c
 }
 
-// POST /api/v1/ingest/heartbeat —— 终端 Agent 心跳：登记 / 更新终端信息，并领取待执行指令。
+type heartbeatReq struct {
+	Host, User, Dept, IP, OS, OSKey, Agent string
+	CPU, Mem, Disk                         int
+	Warning                                bool
+	PolicyVersion                          string
+}
+
+// POST /api/v1/ingest/heartbeat —— 共享令牌接入的终端心跳（兼容旧版 Agent）。
 func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
-	var hb struct {
-		Host, User, Dept, IP, OS, OSKey, Agent string
-		CPU, Mem, Disk                         int
-		Warning                                bool
-	}
+	var hb heartbeatReq
 	if !readJSON(w, r, &hb) {
 		return
 	}
@@ -146,33 +158,34 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "缺少主机名")
 		return
 	}
+	cmds, _ := s.heartbeat(hb)
+	writeJSON(w, http.StatusOK, map[string]any{"commands": cmds, "interval": 60})
+}
+
+// heartbeat 登记 / 更新终端并领取待执行指令，返回指令与该终端应使用的策略包版本。
+func (s *Server) heartbeat(hb heartbeatReq) ([]store.Command, string) {
 	now := time.Now().UnixMilli()
 	var cmds []store.Command
+	var version string
 	isNew := false
 	s.St.Write(func(d *store.Data) {
-		var e *store.Endpoint
-		for _, x := range d.Endpoints {
-			if x.Host == hb.Host {
-				e = x
-			}
-		}
-		if e == nil {
-			e = &store.Endpoint{ID: fmt.Sprintf("EP%d", store.NextSeq(d, "endpoint")), Host: hb.Host, First: now}
-			d.Endpoints = append(d.Endpoints, e)
-			isNew = true
-		}
+		e := upsertEndpoint(d, hb.Host, now, &isNew)
 		e.User, e.IP, e.OS, e.Agent = clip(hb.User, 40), clip(hb.IP, 45), clip(hb.OS, 60), clip(hb.Agent, 20)
-		e.OSKey = map[string]string{"win": "win", "mac": "mac", "uos": "uos", "kylin": "kylin"}[hb.OSKey]
-		e.OSShort = map[string]string{"win": "WIN", "mac": "MAC", "uos": "UOS", "kylin": "KY"}[e.OSKey]
+		e.OSKey = map[string]string{"win": "win", "mac": "mac", "linux": "uos", "uos": "uos", "kylin": "kylin"}[hb.OSKey]
+		e.OSShort = map[string]string{"win": "WIN", "mac": "MAC", "uos": "LNX", "kylin": "KY"}[e.OSKey]
 		if emp := d.Employee(e.User); emp != nil {
 			e.Dept = emp.Dept
 		} else if hb.Dept != "" {
 			e.Dept = clip(hb.Dept, 40)
 		}
-		e.CPU, e.Mem, e.Disk = min(100, max(0, hb.CPU)), min(100, max(0, hb.Mem)), min(100, max(0, hb.Disk))
+		e.CPU, e.Mem, e.Disk = min(100, max(-1, hb.CPU)), min(100, max(-1, hb.Mem)), min(100, max(-1, hb.Disk))
 		e.LastSeen, e.Status = now, "online"
 		if hb.Warning {
 			e.Status = "warning"
+		}
+		version = buildBundle(d, e).Version
+		if hb.PolicyVersion != "" {
+			e.PolicyVersion, e.PolicySynced = clip(hb.PolicyVersion, 40), hb.PolicyVersion == version
 		}
 		for _, c := range d.Commands {
 			if c.Host == hb.Host && c.Status == "pending" {
@@ -187,7 +200,20 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if cmds == nil {
 		cmds = []store.Command{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"commands": cmds, "interval": 60})
+	return cmds, version
+}
+
+// upsertEndpoint 按主机名查找终端，不存在则创建（须在写锁内调用）。
+func upsertEndpoint(d *store.Data, host string, now int64, isNew *bool) *store.Endpoint {
+	for _, x := range d.Endpoints {
+		if x.Host == host {
+			return x
+		}
+	}
+	e := &store.Endpoint{ID: fmt.Sprintf("EP%d", store.NextSeq(d, "endpoint")), Host: host, First: now, Status: "online"}
+	d.Endpoints = append(d.Endpoints, e)
+	*isNew = true
+	return e
 }
 
 // POST /api/v1/ingest/nodes —— 检测节点 / 网关心跳与运行指标。

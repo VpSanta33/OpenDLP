@@ -4,13 +4,11 @@ import (
 	"fmt"
 
 	"net/http"
+	"opendlp/internal/detect"
 	"opendlp/internal/seed"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
-	"unicode/utf16"
-	"unicode/utf8"
 
 	"opendlp/internal/store"
 )
@@ -295,11 +293,12 @@ func normalizeRule(name, cat, typ string, cfg map[string]any) (map[string]any, s
 }
 
 type ruleReq struct {
-	Name string         `json:"name"`
-	Cat  string         `json:"cat"`
-	Type string         `json:"type"`
-	Cfg  map[string]any `json:"cfg"`
-	Desc string         `json:"desc"`
+	DataType string         `json:"dataType"`
+	Name     string         `json:"name"`
+	Cat      string         `json:"cat"`
+	Type     string         `json:"type"`
+	Cfg      map[string]any `json:"cfg"`
+	Desc     string         `json:"desc"`
 }
 
 func (s *Server) handleRuleCreate(w http.ResponseWriter, r *http.Request, a *Actor) {
@@ -308,12 +307,15 @@ func (s *Server) handleRuleCreate(w http.ResponseWriter, r *http.Request, a *Act
 		return
 	}
 	cfg, msg := normalizeRule(req.Name, req.Cat, req.Type, req.Cfg)
+	if msg == "" && !s.validDataType(req.DataType) {
+		msg = "数据类型无效"
+	}
 	if msg != "" {
 		writeErr(w, http.StatusUnprocessableEntity, msg)
 		return
 	}
 	s.mutate(w, func(d *store.Data) (int, any) {
-		ru := &store.Rule{ID: fmt.Sprintf("R-%d", 100+store.NextSeq(d, "rule")), Name: strings.TrimSpace(req.Name), Cat: req.Cat, Type: req.Type, Cfg: cfg,
+		ru := &store.Rule{ID: fmt.Sprintf("R-%d", 100+store.NextSeq(d, "rule")), Name: strings.TrimSpace(req.Name), Cat: req.Cat, Type: req.Type, DataType: req.DataType, Cfg: cfg,
 			Desc: "自定义规则", Enabled: true, Updated: time.Now().UnixMilli()}
 		if strings.TrimSpace(req.Desc) != "" {
 			ru.Desc = strings.TrimSpace(req.Desc)
@@ -339,6 +341,9 @@ func (s *Server) handleRuleUpdate(w http.ResponseWriter, r *http.Request, a *Act
 		return
 	}
 	cfg, msg := normalizeRule(req.Name, req.Cat, req.Type, req.Cfg)
+	if msg == "" && !s.validDataType(req.DataType) {
+		msg = "数据类型无效"
+	}
 	if msg != "" {
 		writeErr(w, http.StatusUnprocessableEntity, msg)
 		return
@@ -352,7 +357,7 @@ func (s *Server) handleRuleUpdate(w http.ResponseWriter, r *http.Request, a *Act
 		if ru.Builtin {
 			return http.StatusForbidden, fail("内置规则不可修改，请复制为自定义规则")
 		}
-		ru.Name, ru.Cat, ru.Type, ru.Cfg, ru.Updated = strings.TrimSpace(req.Name), req.Cat, req.Type, cfg, time.Now().UnixMilli()
+		ru.Name, ru.Cat, ru.Type, ru.DataType, ru.Cfg, ru.Updated = strings.TrimSpace(req.Name), req.Cat, req.Type, req.DataType, cfg, time.Now().UnixMilli()
 		s.auditIn(d, a, "规则变更", fmt.Sprintf("修改识别规则「%s」（%s）", ru.Name, ru.ID), true, "")
 		return http.StatusOK, ru
 	})
@@ -422,119 +427,6 @@ func (s *Server) handleRuleAction(w http.ResponseWriter, r *http.Request, a *Act
 
 /* ---------- 规则测试（与检测引擎同一套 RE2 实现） ---------- */
 
-var idW = []int{7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2}
-
-func idcardOK(s string) bool {
-	if len(s) != 18 {
-		return false
-	}
-	sum := 0
-	for i := 0; i < 17; i++ {
-		sum += int(s[i]-'0') * idW[i]
-	}
-	return "10X98765432"[sum%11] == strings.ToUpper(s[17:])[0]
-}
-
-func luhnOK(s string) bool {
-	sum, alt := 0, false
-	for i := len(s) - 1; i >= 0; i-- {
-		n := int(s[i] - '0')
-		if alt {
-			if n *= 2; n > 9 {
-				n -= 9
-			}
-		}
-		sum += n
-		alt = !alt
-	}
-	return sum%10 == 0
-}
-
-type match struct {
-	S      int    `json:"s"` // UTF-16 偏移，便于前端直接切片
-	E      int    `json:"e"`
-	V      string `json:"v"`
-	RuleID string `json:"ruleId"`
-	OK     bool   `json:"ok"`
-	bs, be int
-}
-
-// utf16Index 把字节偏移转换为 UTF-16 码元偏移。
-func utf16Index(text string) func(int) int {
-	idx := make([]int, len(text)+1)
-	u := 0
-	for i := 0; i < len(text); {
-		r, size := utf8.DecodeRuneInString(text[i:])
-		for k := 0; k < size; k++ {
-			idx[i+k] = u
-		}
-		u += len(utf16.Encode([]rune{r}))
-		i += size
-	}
-	idx[len(text)] = u
-	return func(b int) int { return idx[b] }
-}
-
-// FindMatches 用规则集扫描文本，返回去重叠后的命中列表。
-func FindMatches(text string, rules []*store.Rule) []match {
-	var out []match
-	for _, ru := range rules {
-		switch ru.Type {
-		case "regex":
-			src, _ := ru.Cfg["src"].(string)
-			re, err := regexp.Compile(src)
-			if err != nil {
-				continue
-			}
-			check, _ := ru.Cfg["check"].(string)
-			for _, loc := range re.FindAllStringIndex(text, 200) {
-				v := text[loc[0]:loc[1]]
-				ok := true
-				switch check {
-				case "idcard":
-					ok = idcardOK(v)
-				case "luhn":
-					ok = luhnOK(v)
-				}
-				out = append(out, match{V: v, RuleID: ru.ID, OK: ok, bs: loc[0], be: loc[1]})
-			}
-		case "keyword":
-			words, _ := ru.Cfg["words"].([]any)
-			for _, w := range words {
-				ws, _ := w.(string)
-				if ws == "" {
-					continue
-				}
-				for i := 0; ; {
-					k := strings.Index(text[i:], ws)
-					if k < 0 {
-						break
-					}
-					out = append(out, match{V: ws, RuleID: ru.ID, OK: true, bs: i + k, be: i + k + len(ws)})
-					i += k + len(ws)
-				}
-			}
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].bs != out[j].bs {
-			return out[i].bs < out[j].bs
-		}
-		return out[i].be-out[i].bs > out[j].be-out[j].bs
-	})
-	conv := utf16Index(text)
-	res := []match{}
-	end := -1
-	for _, m := range out {
-		if m.bs >= end {
-			m.S, m.E = conv(m.bs), conv(m.be)
-			res = append(res, m)
-			end = m.be
-		}
-	}
-	return res
-}
-
 // POST /api/v1/rules/test {text, ruleIds?}；测试文本不落盘、不写日志。
 func (s *Server) handleRuleTest(w http.ResponseWriter, r *http.Request, a *Actor) {
 	var req struct {
@@ -548,14 +440,31 @@ func (s *Server) handleRuleTest(w http.ResponseWriter, r *http.Request, a *Actor
 		writeErr(w, http.StatusRequestEntityTooLarge, "测试文本不能超过 20,000 字符")
 		return
 	}
-	var rules []*store.Rule
+	var rules []detect.Rule
 	s.St.Read(func(d *store.Data) {
 		for _, ru := range d.Rules {
 			if (len(req.RuleIDs) == 0 && ru.Enabled) || validKey(ru.ID, req.RuleIDs) {
-				cp := *ru
-				rules = append(rules, &cp)
+				rules = append(rules, detectRule(ru))
 			}
 		}
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"matches": FindMatches(req.Text, rules)})
+	writeJSON(w, http.StatusOK, map[string]any{"matches": detect.New(rules, nil).Scan(req.Text)})
+}
+
+// validDataType 空值（仅提示）或已定义的数据类型。
+func (s *Server) validDataType(k string) bool {
+	if k == "" {
+		return true
+	}
+	ok := false
+	s.St.Read(func(d *store.Data) {
+		for _, t := range d.DataTypes {
+			ok = ok || t.Key == k
+		}
+	})
+	return ok
+}
+
+func detectRule(r *store.Rule) detect.Rule {
+	return detect.Rule{ID: r.ID, Name: r.Name, Cat: r.Cat, Type: r.Type, DataType: r.DataType, Cfg: r.Cfg}
 }

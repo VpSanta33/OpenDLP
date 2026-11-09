@@ -296,22 +296,93 @@ func TestIngestFlow(t *testing.T) {
 	}
 }
 
-func TestFindMatches(t *testing.T) {
-	r := seed.Reference(time.Now())
-	text := "姓名：张三，身份证 110105199003072311 错误 110105199003072310，卡号 6222020200112348849 手机 13912340912"
-	got := map[string]bool{}
-	for _, m := range FindMatches(text, r.Rules) {
-		got[m.V] = m.OK
-		if string([]rune(text)[m.S:m.E]) != m.V {
-			t.Errorf("UTF-16 偏移错误：%q != %q", string([]rune(text)[m.S:m.E]), m.V)
-		}
+func mustURL(s string) *url.URL { u, _ := url.Parse(s); return u }
+
+// agentReq 以终端独立凭据发起请求。
+func agentReq(t *testing.T, ts *httptest.Server, method, path, cred, body string, hdr ...string) (*http.Response, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Agent "+cred)
+	for i := 0; i+1 < len(hdr); i += 2 {
+		req.Header.Set(hdr[i], hdr[i+1])
 	}
-	if got["110105199003072311"] != true || got["110105199003072310"] != false {
-		t.Errorf("身份证校验位判断错误：%v", got)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ok, hit := got["13912340912"]; !hit || !ok {
-		t.Errorf("手机号未识别：%v", got)
-	}
+	defer res.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return res, out
 }
 
-func mustURL(s string) *url.URL { u, _ := url.Parse(s); return u }
+func TestAgentProtocol(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	c := newClient(t, ts)
+	// 注册需要注册令牌
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/agent/enroll", strings.NewReader(`{"host":"BJ-RD-0001"}`))
+	if res, _ := http.DefaultClient.Do(req); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("无注册令牌应返回 401，实际 %d", res.StatusCode)
+	}
+	code, en := c.agent("/api/v1/agent/enroll", `{"host":"BJ-RD-0001","user":"张伟","agent":"3.3.0","osKey":"mac"}`)
+	if code != 200 || en["agentId"] == nil {
+		t.Fatalf("注册失败：%d %v", code, en)
+	}
+	cred := en["agentId"].(string) + ":" + en["secret"].(string)
+	if res, _ := agentReq(t, ts, "POST", "/api/v1/agent/heartbeat", en["agentId"].(string)+":wrong", `{}`); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("错误凭据应返回 401，实际 %d", res.StatusCode)
+	}
+	// 心跳返回策略版本；拉取策略包支持 ETag
+	_, hb := agentReq(t, ts, "POST", "/api/v1/agent/heartbeat", cred, `{"host":"OTHER-HOST","user":"张伟","agent":"3.3.0"}`)
+	v1 := hb["policyVersion"].(string)
+	res, bundle := agentReq(t, ts, "GET", "/api/v1/agent/policy", cred, "")
+	if res.StatusCode != 200 || bundle["version"] != v1 || len(bundle["rules"].([]any)) == 0 {
+		t.Fatalf("策略包错误：%d %v", res.StatusCode, bundle["version"])
+	}
+	if res, _ := agentReq(t, ts, "GET", "/api/v1/agent/policy", cred, "", "If-None-Match", `"`+v1+`"`); res.StatusCode != http.StatusNotModified {
+		t.Fatalf("版本未变应返回 304，实际 %d", res.StatusCode)
+	}
+	var hosts []string
+	s.St.Read(func(d *store.Data) {
+		for _, e := range d.Endpoints {
+			hosts = append(hosts, e.Host)
+		}
+	})
+	if len(hosts) != 1 || hosts[0] != "BJ-RD-0001" {
+		t.Fatalf("心跳不应能冒充其他主机：%v", hosts)
+	}
+	// 管理员导入合规模板后策略版本变化
+	tok := s.SetupToken("")
+	_, su := c.do("POST", "/api/v1/setup/begin", `{"token":"`+tok+`","account":"secadmin","name":"王安全","password":"`+testPW+`"}`, true)
+	otp, _ := auth.TOTPCode(su["secret"].(string), time.Now())
+	c.do("POST", "/api/v1/setup/complete", `{"enrollment":"`+su["enrollment"].(string)+`","code":"`+otp+`"}`, true)
+	_, tpl := c.do("POST", "/api/v1/policies/templates/sync", `{}`, true)
+	pol := tpl["policies"].([]any)[0].(map[string]any)["id"].(string)
+	c.do("PATCH", "/api/v1/policies/"+pol, `{"enabled":true}`, true)
+	_, hb2 := agentReq(t, ts, "POST", "/api/v1/agent/heartbeat", cred, `{"policyVersion":"`+v1+`"}`)
+	if hb2["policyVersion"] == v1 {
+		t.Fatal("启用策略后策略包版本应变化")
+	}
+	// 检测上报的主机以凭据为准
+	agentReq(t, ts, "POST", "/api/v1/agent/detections", cred, `[{"host":"SPOOF","user":"张伟","channel":"usb","dataType":"idcard","file":"a.xlsx","action":"block","severity":"high"}]`)
+	list, _, _ := s.St.ListIncidents(context.Background(), store.IncidentFilter{}, 1, 5)
+	if len(list) != 1 || list[0].Host != "BJ-RD-0001" {
+		t.Fatalf("事件主机应为凭据绑定的主机：%+v", list)
+	}
+	// 指令下发 → 领取 → 回传结果
+	var epID string
+	s.St.Read(func(d *store.Data) { epID = d.Endpoints[0].ID })
+	c.do("POST", "/api/v1/endpoints/"+epID+"/actions", `{"action":"scan"}`, true)
+	_, hb3 := agentReq(t, ts, "POST", "/api/v1/agent/heartbeat", cred, `{}`)
+	cmd := hb3["commands"].([]any)[0].(map[string]any)
+	if res, out := agentReq(t, ts, "POST", "/api/v1/agent/commands/"+cmd["id"].(string)+"/result", cred, `{"ok":true,"message":"扫描 120 个文件"}`); res.StatusCode != 200 || out["status"] != "done" {
+		t.Fatalf("回传结果失败：%v", out)
+	}
+	// 吊销后凭据失效
+	if code, _ := c.do("POST", "/api/v1/endpoints/"+epID+"/revoke", `{}`, true); code != 200 {
+		t.Fatalf("吊销失败：%d", code)
+	}
+	if res, _ := agentReq(t, ts, "POST", "/api/v1/agent/heartbeat", cred, `{}`); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("吊销后应返回 401，实际 %d", res.StatusCode)
+	}
+}

@@ -84,6 +84,18 @@ type Endpoint struct {
 	LastSeen int64  `json:"lastSeen"`
 	Isolated bool   `json:"isolated,omitempty"`
 	First    int64  `json:"first,omitempty"`
+	// 终端 Agent 状态
+	Enrolled      bool   `json:"enrolled,omitempty"`      // 已使用独立凭据注册
+	Strict        bool   `json:"strict,omitempty"`        // 严格管控：审计 / 加密动作升级为阻断
+	PolicyVersion string `json:"policyVersion,omitempty"` // Agent 已应用的策略包版本
+	PolicySynced  bool   `json:"policySynced,omitempty"`  // 是否为当前最新版本
+}
+
+// AgentCred 终端 Agent 的独立凭据（仅保存密钥的 SHA-256 摘要）。
+type AgentCred struct {
+	Host    string `json:"host"`
+	Hash    string `json:"hash"`
+	Created int64  `json:"created"`
 }
 
 // Command 下发给终端 Agent 的指令，由 Agent 心跳时领取。
@@ -93,8 +105,10 @@ type Command struct {
 	Action    string `json:"action"`
 	By        string `json:"by"`
 	Created   int64  `json:"created"`
-	Status    string `json:"status"` // pending | delivered
+	Status    string `json:"status"` // pending | delivered | done | failed
 	Delivered int64  `json:"delivered,omitempty"`
+	Finished  int64  `json:"finished,omitempty"`
+	Result    string `json:"result,omitempty"`
 }
 
 // Fleet 终端汇总（由终端心跳计算）。
@@ -174,17 +188,18 @@ type ReleaseOptions struct {
 }
 
 type Rule struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	Cat     string         `json:"cat"`
-	Type    string         `json:"type"` // regex | keyword | edm | idm | ml | file
-	Cfg     map[string]any `json:"cfg"`
-	Desc    string         `json:"desc"`
-	Builtin bool           `json:"builtin"`
-	Enabled bool           `json:"enabled"`
-	Hits    int            `json:"hits"`
-	FP      float64        `json:"fp"`
-	Updated int64          `json:"updated"`
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Cat      string         `json:"cat"`
+	Type     string         `json:"type"` // regex | keyword | edm | idm | ml | file
+	DataType string         `json:"dataType"`
+	Cfg      map[string]any `json:"cfg"`
+	Desc     string         `json:"desc"`
+	Builtin  bool           `json:"builtin"`
+	Enabled  bool           `json:"enabled"`
+	Hits     int            `json:"hits"`
+	FP       float64        `json:"fp"`
+	Updated  int64          `json:"updated"`
 }
 
 type Role struct {
@@ -293,29 +308,30 @@ type Report struct {
 // Data 为配置类数据的内存工作集，整体以 JSONB 持久化到 PostgreSQL（documents 表）。
 // 事件、检测量、审计日志与会话数据量大，存放在独立的数据表中，不在此结构内。
 type Data struct {
-	Version         int               `json:"version"`
-	Seq             map[string]int    `json:"seq"`
-	Channels        []Channel         `json:"channels"`
-	DataTypes       []DataType        `json:"dataTypes"`
-	Depts           []string          `json:"depts"`
-	DeptLeaders     map[string]string `json:"deptLeaders"`
-	Employees       []*Employee       `json:"employees"`
-	Policies        []*Policy         `json:"policies"`
-	Endpoints       []*Endpoint       `json:"endpoints"`
-	Commands        []*Command        `json:"commands"`
-	Repos           []*Repo           `json:"repos"`
-	Notes           []*Note           `json:"notes"`
-	Approvals       []*Approval       `json:"approvals"`
-	Rules           []*Rule           `json:"rules"`
-	Roles           []*Role           `json:"roles"`
-	Perms           map[string]Matrix `json:"perms"`
-	Admins          []*Admin          `json:"admins"`
-	Nodes           []*Node           `json:"nodes"`
-	Integrations    []*Integration    `json:"integrations"`
-	ReportSchedules []*Schedule       `json:"reportSchedules"`
-	Reports         []*Report         `json:"reports"`
-	Settings        map[string]any    `json:"settings"`
-	Watchlist       []string          `json:"watchlist"`
+	Version         int                   `json:"version"`
+	Seq             map[string]int        `json:"seq"`
+	Channels        []Channel             `json:"channels"`
+	DataTypes       []DataType            `json:"dataTypes"`
+	Depts           []string              `json:"depts"`
+	DeptLeaders     map[string]string     `json:"deptLeaders"`
+	Employees       []*Employee           `json:"employees"`
+	Policies        []*Policy             `json:"policies"`
+	Endpoints       []*Endpoint           `json:"endpoints"`
+	Commands        []*Command            `json:"commands"`
+	Repos           []*Repo               `json:"repos"`
+	Notes           []*Note               `json:"notes"`
+	Approvals       []*Approval           `json:"approvals"`
+	Rules           []*Rule               `json:"rules"`
+	Roles           []*Role               `json:"roles"`
+	Perms           map[string]Matrix     `json:"perms"`
+	Admins          []*Admin              `json:"admins"`
+	Nodes           []*Node               `json:"nodes"`
+	Integrations    []*Integration        `json:"integrations"`
+	ReportSchedules []*Schedule           `json:"reportSchedules"`
+	Reports         []*Report             `json:"reports"`
+	Settings        map[string]any        `json:"settings"`
+	Watchlist       []string              `json:"watchlist"`
+	AgentCreds      map[string]*AgentCred `json:"agentCreds"`
 }
 
 // Modules 平台功能模块（与前端路由一一对应）。

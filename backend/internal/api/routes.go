@@ -32,6 +32,13 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/ingest/nodes", s.agent(s.handleNodeHeartbeat))
 	m.HandleFunc("POST /api/v1/ingest/approvals", s.agent(s.handleApprovalSubmit))
 	m.HandleFunc("POST /api/v1/ingest/discovery", s.agent(s.handleDiscoveryResult))
+
+	// 终端 Agent（独立凭据）
+	m.HandleFunc("POST /api/v1/agent/enroll", s.agent(s.handleAgentEnroll))
+	m.HandleFunc("POST /api/v1/agent/heartbeat", s.agentAuth(s.handleAgentHeartbeat))
+	m.HandleFunc("GET /api/v1/agent/policy", s.agentAuth(s.handleAgentPolicy))
+	m.HandleFunc("POST /api/v1/agent/detections", s.agentAuth(s.handleAgentDetections))
+	m.HandleFunc("POST /api/v1/agent/commands/{id}/result", s.agentAuth(s.handleAgentCommandResult))
 	m.HandleFunc("POST /api/v1/ingest/approvals/{id}/leader", s.agent(s.handleLeaderDecision))
 
 	// 会话与通用
@@ -84,6 +91,8 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/discovery/repos/{idx}/rescan", "discovery", "op", s.handleRepoRescan)
 	s.route("POST /api/v1/endpoints/{id}/actions", "endpoints", "op", s.handleEndpointAction)
 	s.route("POST /api/v1/endpoints/batch-upgrade", "endpoints", "op", s.handleEndpointUpgrade)
+	s.route("GET /api/v1/endpoints/{id}/commands", "endpoints", "view", s.handleEndpointCommands)
+	s.route("POST /api/v1/endpoints/{id}/revoke", "endpoints", "cfg", s.handleEndpointRevoke)
 	s.route("POST /api/v1/endpoints/deploy-token", "endpoints", "cfg", s.handleDeployToken)
 
 	// 报表
@@ -323,7 +332,8 @@ func (s *Server) handleUebaAction(w http.ResponseWriter, r *http.Request, a *Act
 			for _, e := range d.Endpoints {
 				if e.User == req.User {
 					hosts = append(hosts, e.Host)
-					enqueue(d, e.Host, "strict", a.Name)
+					e.Strict = true                    // 策略包随之变化，审计 / 加密动作升级为阻断
+					enqueue(d, e.Host, "push", a.Name) // 通知 Agent 立即同步策略
 				}
 			}
 		})

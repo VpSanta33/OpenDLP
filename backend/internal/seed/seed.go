@@ -204,7 +204,7 @@ func PolicyTemplates() []store.Policy {
 	}
 	out := make([]store.Policy, len(pols))
 	for i, p := range pols {
-		out[i] = store.Policy{Name: p.name, Desc: p.desc, Channels: p.chs, DataTypes: p.dts, Action: p.act, Severity: p.sev}
+		out[i] = store.Policy{Name: p.name, Desc: p.desc, Channels: p.chs, DataTypes: p.dts, Action: p.act, Severity: p.sev, Threshold: map[string]int{"身份证号外发拦截": 10, "客户数据批量导出告警": 50}[p.name]}
 	}
 	return out
 

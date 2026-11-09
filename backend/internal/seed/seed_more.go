@@ -102,7 +102,7 @@ var ruleDefs = []ruleDef{
 
 func seedRules(d *store.Data, now int64) {
 	for i, x := range ruleDefs {
-		d.Rules = append(d.Rules, &store.Rule{ID: fmt.Sprintf("R-%d", 101+i), Name: x.name, Cat: x.cat, Type: x.typ, Cfg: x.cfg, Desc: x.desc,
+		d.Rules = append(d.Rules, &store.Rule{ID: fmt.Sprintf("R-%d", 101+i), Name: x.name, Cat: x.cat, Type: x.typ, DataType: ruleDataType[x.name], Cfg: x.cfg, Desc: x.desc,
 			Builtin: true, Enabled: x.typ == "regex" || x.typ == "keyword" || x.typ == "file", Updated: now})
 	}
 	d.Seq["rule"] = 100 + len(ruleDefs)
@@ -276,4 +276,28 @@ func baseIntegrations() []*store.Integration {
 		{Key: "wecom", Name: "企业微信", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
 		{Key: "itsm", Name: "ITSM 工单系统", Cat: "通知协同", Icon: "list", St: "off", Info: "未配置，可将高危事件自动生成工单"},
 	}
+}
+
+// ruleDataType 内置规则命中后计入的敏感数据类型（与策略的数据类型对应；空表示仅提示）。
+var ruleDataType = map[string]string{
+	"中国居民身份证号":       "idcard",
+	"手机号码":           "phone",
+	"电子邮箱地址":         "",
+	"护照号码":           "idcard",
+	"员工花名册 (HR)":     "idcard",
+	"简历识别模型":         "",
+	"银行卡号":           "bankcard",
+	"统一社会信用代码":       "",
+	"财务敏感词典":         "finance",
+	"AWS Access Key": "source",
+	"私钥文件":           "source",
+	"数据库连接串":         "source",
+	"内网 IP 地址":       "",
+	"密级标识关键词":        "contract",
+	"源代码特征":          "source",
+	"客户主数据 (CRM)":    "customer",
+	"核心产品设计文档":       "design",
+	"战略合同模板":         "contract",
+	"源代码分类模型":        "source",
+	"工程图纸文件类型":       "design",
 }
