@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"opendlp/internal/auth"
+	"opendlp/internal/llm"
 	"opendlp/internal/notify"
 	"opendlp/internal/store"
 )
@@ -401,6 +402,29 @@ func (s *Server) handleIntegrationTest(w http.ResponseWriter, r *http.Request, a
 		writeJSON(w, http.StatusOK, res)
 		return
 	}
+	if key == "ai" && it.St != "off" {
+		conf, err := s.aiSetup()
+		if err == nil {
+			t := time.Now()
+			ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+			var u llm.Usage
+			var msg llm.Message
+			msg, u, err = conf.cli.Chat(ctx, []llm.Message{{Role: "user", Content: "这是连通性测试，请只回复：OK"}}, llm.Options{MaxTokens: 20})
+			cancel()
+			s.recordAI(u, err)
+			if err == nil {
+				lat := time.Since(t).Milliseconds()
+				res["ok"], res["latency"], res["warn"] = true, lat, lat > 15000
+				res["message"] = fmt.Sprintf("模型 %s 响应正常，耗时 %dms，回复：%s", conf.cli.Model, lat, clip(strings.TrimSpace(msg.Content), 30))
+			}
+		}
+		if err != nil {
+			res["message"] = err.Error()
+		}
+		s.audit(a, "配置变更", "测试 AI 大模型连接", res["ok"] == true, fmt.Sprint(map[bool]any{true: "", false: res["message"]}[res["ok"] == true]))
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
 	switch {
 	case it.St == "off":
 		res["message"] = "尚未配置，请先完成配置"
@@ -459,7 +483,7 @@ func probeAddr(cfg map[string]string) string {
 }
 
 // optionalIntegField 允许留空的集成配置项（例如免认证的内网 SMTP 中继、未启用加签的钉钉机器人）。
-var optionalIntegField = map[string]bool{"用户名": true, "口令": true, "加签密钥": true, "加密方式": true, "端口": true, "协议": true}
+var optionalIntegField = map[string]bool{"用户名": true, "口令": true, "加签密钥": true, "加密方式": true, "端口": true, "协议": true, "API Key": true}
 
 func (s *Server) handleIntegrationSave(w http.ResponseWriter, r *http.Request, a *Actor) {
 	var req struct {
@@ -615,7 +639,7 @@ func (s *Server) backup(ctx context.Context) (string, int64, error) {
 var settingKinds = map[string]string{
 	"ocr": "bool", "edm": "bool", "fp": "bool", "ml": "bool", "mail": "bool", "wecom": "bool", "ding": "bool", "siem": "bool", "evi": "bool", "mask": "bool",
 	"sens": "num", "freq": "str", "ret1": "str", "ret2": "str", "comp": "list",
-	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date", "consoleUrl": "url", "pwdMaxAge": "days",
+	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date", "consoleUrl": "url", "pwdMaxAge": "days", "aiRedact": "bool", "aiReport": "bool",
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, a *Actor) {
@@ -693,6 +717,10 @@ func validateIntegration(key string, c map[string]string) string {
 		}
 		if v := c["加密方式"]; v != "" && v != "starttls" && v != "tls" && v != "none" {
 			return "加密方式须为 starttls、tls 或 none"
+		}
+	case "ai":
+		if _, err := llm.New(c["接口地址"], c["模型"], c["API Key"]); err != nil {
+			return err.Error()
 		}
 	case "wecom", "ding":
 		if notify.CheckWebhook(c["Webhook 地址"]) != nil {

@@ -227,6 +227,7 @@ func (s *Server) runSchedule(ctx context.Context, id string, run time.Time, by s
 		return "", "", nil, "", err
 	}
 	rd.Period = label
+	rd.AISummary = s.aiReportSummary(ctx, rd)
 	fn, mime, data, err := renderReport(rd, sc.Fmt)
 	if err != nil {
 		s.finishSchedule(id, err)

@@ -297,6 +297,7 @@ type Delivery struct {
 	Fail    int    `json:"fail"`
 	LastAt  int64  `json:"lastAt"`
 	LastErr string `json:"lastErr,omitempty"`
+	Tokens  int    `json:"tokens,omitempty"` // AI 大模型累计 token 用量
 }
 
 type Schedule struct {
@@ -353,7 +354,23 @@ type Data struct {
 	Settings        map[string]any        `json:"settings"`
 	Watchlist       []string              `json:"watchlist"`
 	AgentCreds      map[string]*AgentCred `json:"agentCreds"`
+	AITriage        map[string]*AITriage  `json:"aiTriage,omitempty"`
 }
 
 // Modules 平台功能模块（与前端路由一一对应）。
 var Modules = []string{"dashboard", "incidents", "ueba", "policies", "rules", "discovery", "approvals", "endpoints", "reports", "audit", "iam", "ops", "settings"}
+
+// AITriage AI 研判结果（缓存在配置文档中，最多保留 2000 条）。
+type AITriage struct {
+	Risk        string   `json:"risk"`  // high | medium | low
+	Score       int      `json:"score"` // 0-100
+	Summary     string   `json:"summary"`
+	Reasons     []string `json:"reasons"`
+	Steps       []string `json:"recommendations"`
+	Disposition string   `json:"disposition"` // escalate | resolve | fp | monitor
+	Confidence  string   `json:"confidence"`
+	Model       string   `json:"model"`
+	Redacted    bool     `json:"redacted"`
+	By          string   `json:"by"`
+	TS          int64    `json:"ts"`
+}

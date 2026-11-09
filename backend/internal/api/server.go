@@ -42,6 +42,8 @@ type Server struct {
 	limiter *limiter
 	setup   *setupState
 	Alerts  *Alerts
+	aiLimit *limiter     // AI 调用频率限制（每账号）
+	aiHTTP  *http.Client // 测试时替换模型服务的 HTTP 客户端
 }
 
 // Actor 当前请求的操作者。
@@ -70,6 +72,7 @@ func New(st *store.Store, cfg Config) *Server {
 		setup:   newSetupState(),
 	}
 	s.Alerts = newAlerts(s)
+	s.aiLimit = newLimiter(30, 10*time.Minute)
 	st.OnAudit = s.Alerts.Audit
 	s.normalizeSchedules()
 	s.routes()

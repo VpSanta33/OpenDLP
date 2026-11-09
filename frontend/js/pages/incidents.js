@@ -28,7 +28,9 @@
         <button class="icon-btn dr-close" data-close aria-label="关闭">${ic('x')}</button>
       </div>
       <div class="dr-body">
-        <div class="callout c-${i.severity}">${ic('shield')}<div>该事件由策略 <b>「${esc(i.policy)}」</b> 触发，系统已执行 <b>${ACT[i.action].name}</b>。${i.severity === 'critical' ? '该用户近 7 天内存在多次同类行为，建议优先处置。' : ''}</div></div>
+        <div class="callout c-${i.severity}">${ic('shield')}<div>该事件由策略 <b>「${esc(i.policy)}」</b> 触发，系统已执行 <b>${ACT[i.action].name}</b>。${i.severity === 'critical' ? '严重事件，建议优先处置。' : ''}</div></div>
+        <h4 class="sec-t">AI 研判</h4>
+        <div class="ai-box" id="aiBox"></div>
         <div class="kv">${kv.map(([k, v]) => `<div><span>${k}</span><b title="${esc(v)}">${esc(v)}</b></div>`).join('')}</div>
         <h4 class="sec-t">命中内容预览 <small>已脱敏</small></h4>
         <div class="snippet">
@@ -48,6 +50,7 @@
         <button class="btn btn-primary" data-a="resolve" data-perm="incidents:op" ${closedSt ? 'disabled' : ''}>${ic('check')}确认处置</button>
       </div>`;
     const { panel, close } = openLayer('drawer', html);
+    if (UI.ai) UI.ai.mountTriage(panel.querySelector('#aiBox'), i);
     panel.querySelector('.dr-foot').addEventListener('click', e => {
       const b = e.target.closest('[data-a]');
       if (!b || b.disabled) return;

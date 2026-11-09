@@ -230,6 +230,7 @@ func reportPeriod(req reportReq, now time.Time, loc *time.Location) (time.Time, 
 
 type reportData struct {
 	Title, Period, Scope, Generated, By string
+	AISummary                           string // AI 管理摘要（未启用时为空）
 	Detections, Blocked, Incidents      int
 	Critical, Resolved, ResolvedPct     int
 	Channels, Severity                  []KVName
@@ -323,14 +324,16 @@ func (s *Server) buildReport(ctx context.Context, title, scope string, from, to 
 	return rd, nil
 }
 
-var reportHTML = template.Must(template.New("r").Parse(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>{{.Title}}</title>
-<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#1e293b;max-width:860px;margin:32px auto;padding:0 24px;line-height:1.7}
+var reportHTML = template.Must(template.New("r").Funcs(template.FuncMap{"splitParas": splitParas}).Parse(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>{{.Title}}</title>
+<style>.ai{border:1px solid #c7d2fe;background:#eef2ff;border-radius:8px;padding:12px 16px;margin:16px 0}.ai b{color:#3730a3}.ai span{color:#64748b;font-size:12px;margin-left:8px}.ai p{margin:8px 0 0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#1e293b;max-width:860px;margin:32px auto;padding:0 24px;line-height:1.7}
 h1{font-size:24px;margin:0}h2{font-size:16px;border-bottom:2px solid #2563eb;padding-bottom:6px;margin-top:32px}.meta{color:#64748b;font-size:13px}
 .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.kpi div{background:#f3f6fb;border-radius:6px;padding:12px;text-align:center}.kpi b{display:block;font-size:22px;color:#2563eb}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #e2e8f0;padding:7px 10px;text-align:left}th{background:#f3f6fb}
 .bar{height:8px;background:#2563eb;border-radius:4px}.foot{margin-top:40px;color:#94a3b8;font-size:12px;text-align:center}@media print{body{margin:0}}</style></head><body>
 <p class="meta">OpenDLP · 数据安全报告 · 密级：内部</p><h1>{{.Title}}</h1>
 <p class="meta">统计周期：{{.Period}}　范围：{{.Scope}}　生成时间：{{.Generated}}　生成人：{{.By}}</p>
+{{if .AISummary}}<div class="ai"><b>AI 管理摘要</b><span>由 AI 根据本报表数据生成，仅供参考</span>{{range splitParas .AISummary}}<p>{{.}}</p>{{end}}</div>{{end}}
 <h2>一、总体态势</h2><div class="kpi"><div><b>{{.Detections}}</b>外发检测</div><div><b>{{.Blocked}}</b>阻断外发</div><div><b>{{.Incidents}}</b>DLP 事件</div><div><b>{{.ResolvedPct}}%</b>处置完成率</div></div>
 <p>统计周期内共检测外发行为 {{.Detections}} 次，阻断 {{.Blocked}} 次，产生 DLP 事件 {{.Incidents}} 起，其中严重事件 {{.Critical}} 起，已处置 {{.Resolved}} 起。</p>
 <h2>二、外发渠道分布</h2><table><tr><th>渠道</th><th>事件数</th><th style="width:50%"></th></tr>{{range .Channels}}<tr><td>{{.Name}}</td><td>{{.Value}}</td><td><div class="bar" style="width:{{.Pct}}%"></div></td></tr>{{end}}</table>
@@ -402,6 +405,7 @@ func (s *Server) startReport(w http.ResponseWriter, a *Actor, req reportReq) {
 			return "", "", nil, err
 		}
 		rd.Period = label
+		rd.AISummary = s.aiReportSummary(context.Background(), rd)
 		fn, mime, data, err := renderReport(rd, req.Fmt)
 		if err == nil {
 			s.St.Write(func(d *store.Data) {
@@ -546,4 +550,15 @@ func (s *Server) handleScheduleDelete(w http.ResponseWriter, r *http.Request, a 
 		}
 		return http.StatusNotFound, fail("定时报表不存在")
 	})
+}
+
+// splitParas 把 AI 摘要按空行 / 换行拆成段落（模板中逐段转义输出）。
+func splitParas(s string) []string {
+	var out []string
+	for _, p := range strings.Split(strings.ReplaceAll(s, "\r", ""), "\n") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

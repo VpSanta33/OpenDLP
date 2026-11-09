@@ -12,6 +12,7 @@ import (
 // IncidentFilter 事件查询条件（空值或 "all" 表示不限）。
 type IncidentFilter struct {
 	Q, Sev, Ch, St, User string
+	Dept, DataType       string
 	From, To             int64
 }
 
@@ -30,6 +31,12 @@ func (f IncidentFilter) where() (string, []any) {
 	}
 	if f.User != "" {
 		add("user_name = $%d", f.User)
+	}
+	if f.Dept != "" {
+		add("dept = $%d", f.Dept)
+	}
+	if f.DataType != "" {
+		add("data_type = $%d", f.DataType)
 	}
 	if f.From > 0 {
 		add("ts >= $%d", time.UnixMilli(f.From))
@@ -196,4 +203,46 @@ func (s *Store) PurgeIncidents(ctx context.Context, before time.Time) (int64, er
 func (s *Store) SetIncidentSeq(ctx context.Context, n int64) error {
 	_, err := s.DB.Exec(ctx, `SELECT setval('incident_seq', GREATEST($1, (SELECT last_value FROM incident_seq)))`, n)
 	return err
+}
+
+// GroupCount 一个分组的事件数。
+type GroupCount struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+}
+
+// 允许分组的维度（白名单，防止 SQL 注入）。
+var groupCols = map[string]string{"channel": "channel", "severity": "severity", "data_type": "data_type", "dept": "dept", "user": "user_name",
+	"action": "action", "status": "status", "host": "host", "policy": "policy",
+	"day": "to_char(ts AT TIME ZONE $TZ, 'YYYY-MM-DD')", "hour": "extract(hour FROM ts AT TIME ZONE $TZ)::int::text"}
+
+// IncidentGroup 按维度统计事件数（降序，最多 limit 组；按天分组时按日期升序）。
+func (s *Store) IncidentGroup(ctx context.Context, f IncidentFilter, by string, limit int) ([]GroupCount, int, error) {
+	col, ok := groupCols[by]
+	if !ok {
+		return nil, 0, fmt.Errorf("不支持的分组维度 %q", by)
+	}
+	where, args := f.where()
+	var total int
+	if err := s.DB.QueryRow(ctx, `SELECT count(*) FROM incidents`+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	order := "2 DESC, 1"
+	if by == "day" || by == "hour" {
+		order = "1"
+	}
+	if strings.Contains(col, "$TZ") {
+		args = append(args, s.Loc.String())
+		col = strings.ReplaceAll(col, "$TZ", fmt.Sprintf("$%d::text", len(args)))
+	}
+	args = append(args, limit)
+	rows, err := s.DB.Query(ctx, fmt.Sprintf(`SELECT COALESCE(%s, '') AS k, count(*) FROM incidents%s GROUP BY 1 ORDER BY %s LIMIT $%d`, col, where, order, len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (GroupCount, error) {
+		var g GroupCount
+		return g, r.Scan(&g.Key, &g.Count)
+	})
+	return out, total, err
 }

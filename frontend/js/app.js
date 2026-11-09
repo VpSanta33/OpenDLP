@@ -741,6 +741,7 @@
     API.closeStream();
     UI.runCleanups(); UI.closeAllLayers(); closePops();
     UI.me = null; tasks = []; D.reset(); renderWatermark();
+    if (UI.ai) UI.ai.reset();
     $('#view').innerHTML = '';
     showLogin(reason);
   }

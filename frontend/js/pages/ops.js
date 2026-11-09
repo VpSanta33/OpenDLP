@@ -84,7 +84,7 @@
       function delivery(d) {
         if (!d) return '';
         const t = new Date(d.lastAt).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-        return `<small class="ig-dl${d.lastErr ? ' bad' : ''}" title="${esc(d.lastErr || '')}">已投递 ${fmt(d.ok)} · 失败 ${fmt(d.fail)} · 最近 ${t}${d.lastErr ? ' · ' + esc(d.lastErr.slice(0, 40)) : ''}</small>`;
+        return `<small class="ig-dl${d.lastErr ? ' bad' : ''}" title="${esc(d.lastErr || '')}">${d.tokens !== undefined ? '调用' : '已投递'} ${fmt(d.ok)} · 失败 ${fmt(d.fail)}${d.tokens ? ' · ' + fmt(d.tokens) + ' tokens' : ''} · 最近 ${t}${d.lastErr ? ' · ' + esc(d.lastErr.slice(0, 40)) : ''}</small>`;
       }
       function renderInteg() {
         let cat = '';
@@ -111,19 +111,20 @@
           wecom: [['Webhook 地址', 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=']],
           ding: [['Webhook 地址', 'https://oapi.dingtalk.com/robot/send?access_token='], ['加签密钥', '', 1]],
           siem: [['Syslog 地址', ''], ['端口', '514'], ['协议', 'udp']],
+          ai: [['接口地址', 'https://api.deepseek.com/v1'], ['模型', 'deepseek-chat'], ['API Key', '', 1]],
           soar: [['平台地址', 'https://soar.corp.example'], ['API Key', '']],
           casb: [['租户 ID', ''], ['API 端点', 'https://api.casb.example']],
           itsm: [['ITSM 地址', 'https://itsm.corp.example'], ['工单类型', '安全事件']]
         }[it.key] || [['服务地址', ''], ['认证令牌', '']];
         // 已配置的集成使用服务端配置（密钥类字段以 ****** 掩码返回，保存时保持不变）
         const opt = new Set(tpl.filter(f => f[2]).map(f => f[0]));
-        const hint = { '加密方式': 'starttls / tls / none', '收件人': '多个邮箱用逗号分隔', '协议': 'udp / tcp' };
+        const hint = { '加密方式': 'starttls / tls / none', '收件人': '多个邮箱用逗号分隔', '协议': 'udp / tcp', '接口地址': 'OpenAI 兼容接口，例如 https://dashscope.aliyuncs.com/compatible-mode/v1、http://内网地址:11434/v1', '模型': '例如 deepseek-chat、qwen-plus、qwen2.5:14b' };
         const fields = it.config && Object.keys(it.config).length ? Object.entries(it.config) : tpl.map(f => [f[0], f[1]]);
         // 已有配置缺少模板字段时补齐（例如升级后新增的字段）
         if (it.config) tpl.forEach(([l, v]) => { if (!(l in it.config)) fields.push([l, v]); });
         const { panel, close } = openLayer('modal', `
           <div class="md-head"><div><h2>${it.name}</h2><p>${it.cat} · ${esc(it.info)}</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
-          <div class="md-body">${fields.map(([l, v]) => `<div class="field"><label class="lbl">${esc(l)}${opt.has(l) ? ' <small class="muted">（可选）</small>' : ' <em>*</em>'}</label><input class="input" data-f="${esc(l)}" ${opt.has(l) ? 'data-opt' : ''} value="${esc(v)}" ${/key|secret|token|令牌|密码|口令|密钥/i.test(l) ? 'type="password" placeholder="请输入（加密存储）"' : hint[l] ? `placeholder="${hint[l]}"` : ''}></div>`).join('')}
+          <div class="md-body">${it.key === 'ai' ? `<p class="muted small" style="margin-bottom:12px">支持 DeepSeek、通义千问、智谱、Kimi 等 OpenAI 兼容接口，以及内网部署的 vLLM / Ollama / Xinference。本地部署模型可不填 API Key。数据脱敏与报表摘要开关见「系统设置 → AI 分析」。</p>` : ''}${fields.map(([l, v]) => `<div class="field"><label class="lbl">${esc(l)}${opt.has(l) ? ' <small class="muted">（可选）</small>' : ' <em>*</em>'}</label><input class="input" data-f="${esc(l)}" ${opt.has(l) ? 'data-opt' : ''} value="${esc(v)}" ${/key|secret|token|令牌|密码|口令|密钥/i.test(l) ? 'type="password" placeholder="请输入（加密存储）"' : hint[l] ? `placeholder="${hint[l]}"` : ''}></div>`).join('')}
             <label class="set-row"><div><b>启用该集成</b><small>保存后立即生效，可随时停用</small></div><span class="switch"><input type="checkbox" id="igOn" ${it.st !== 'off' || !it.config ? 'checked' : ''}><span></span></span></label></div>
           <div class="md-foot"><button class="btn" data-t>${ic('refresh')}测试连接</button><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok data-perm="ops:cfg">${ic('save')}保存</button></div>`);
         UI.applyPerms(panel);

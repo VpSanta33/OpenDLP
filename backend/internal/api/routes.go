@@ -119,6 +119,10 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/admins", "iam", "cfg", s.handleAdminCreate)
 	s.route("POST /api/v1/admins/{acc}/{action}", "iam", "cfg", s.handleAdminAction)
 	s.route("PATCH /api/v1/admins/{acc}", "iam", "cfg", s.handleAdminPatch)
+	// AI 分析
+	s.route("POST /api/v1/ai/incidents/{id}/triage", "incidents", "op", s.handleAITriage)
+	s.route("GET /api/v1/ai/incidents/{id}", "incidents", "view", s.handleAITriageGet)
+	s.route("POST /api/v1/ai/chat", "", "", s.handleAIChat)
 
 	// 运维与设置
 	s.route("GET /api/v1/ops/metrics", "ops", "view", s.handleOpsMetrics)

@@ -276,6 +276,7 @@ func baseIntegrations() []*store.Integration {
 		{Key: "smtp", Name: "告警邮件 (SMTP)", Cat: "通知协同", Icon: "mail", St: "off", Info: "未配置，用于告警与定时报表邮件"},
 		{Key: "wecom", Name: "企业微信群机器人", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
 		{Key: "ding", Name: "钉钉机器人", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
+		{Key: "ai", Name: "AI 大模型", Cat: "智能分析", Icon: "wand", St: "off", Info: "未配置，支持 DeepSeek、通义千问等 OpenAI 兼容接口及本地部署模型"},
 		{Key: "itsm", Name: "ITSM 工单系统", Cat: "通知协同", Icon: "list", St: "off", Info: "未配置，可将高危事件自动生成工单"},
 	}
 }

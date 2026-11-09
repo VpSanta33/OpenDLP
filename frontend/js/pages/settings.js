@@ -36,6 +36,10 @@
           <div class="set-row"><div><b>许可编号</b><small>由软件供应商提供</small></div><input class="input" data-k="licenseNo" value="${esc(val('licenseNo', ''))}" maxlength="40"></div>
           <div class="set-row"><div><b>授权终端数</b><small>用于终端授权用量统计</small></div><input class="input" type="number" min="0" data-k="licenseSeats" value="${val('licenseSeats', 0)}"></div>
           <div class="set-row"><div><b>到期日期</b><small>到期前 30 天在运维页提醒</small></div><input class="input" type="date" data-k="licenseExpiry" value="${esc(val('licenseExpiry', ''))}"></div>`, { sub: '许可证信息' })}
+        ${card('AI 分析', `
+          ${sw('aiRedact', '发送前脱敏', '姓名、终端、IP、邮箱替换为代号，身份证号与手机号遮盖，结果在本地还原；任何情况下不发送文件内容', true)}
+          ${sw('aiReport', '报表 AI 管理摘要', '生成报表（含定时报表）时由 AI 撰写管理摘要', true)}
+          <p class="muted small" style="margin-top:10px">${esc(chDesc('ai', c => '当前模型：' + (c['模型'] || '-') + ' · ' + (c['接口地址'] || '')))}</p>`, { sub: '大模型接入与数据保护' })}
         ${card('账号安全', `
           <div class="set-row"><div><b>管理员口令有效期</b><small>到期后登录须先修改口令；初始口令与重置后的口令首次登录必须修改</small></div><select class="input" data-k="pwdMaxAge" data-num>${[[30, '30 天'], [60, '60 天'], [90, '90 天'], [180, '180 天'], [365, '365 天'], [0, '不过期']].map(([v, t]) => `<option value="${v}" ${+val('pwdMaxAge', 90) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`, { sub: '身份鉴别（等保 2.0）' })}
         ${card('数据保留', `
