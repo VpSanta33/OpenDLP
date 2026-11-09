@@ -30,16 +30,20 @@ import (
 
 // Bundle 下发给终端的策略包。
 type Bundle struct {
-	Version   string          `json:"version"`
-	Generated int64           `json:"generated"`
-	Strict    bool            `json:"strict"`
-	Policies  []detect.Policy `json:"policies"`
-	Rules     []detect.Rule   `json:"rules"`
+	Version   string            `json:"version"`
+	Generated int64             `json:"generated"`
+	Strict    bool              `json:"strict"`
+	Policies  []detect.Policy   `json:"policies"`
+	Rules     []detect.Rule     `json:"rules"`
+	DataTypes map[string]string `json:"dataTypes"` // 数据类型 key → 名称（终端提示用）
 }
 
 // buildBundle 生成终端的策略包（须在锁内调用）。版本号为内容摘要，内容不变则版本不变。
 func buildBundle(d *store.Data, e *store.Endpoint) Bundle {
-	b := Bundle{Strict: e != nil && e.Strict, Policies: []detect.Policy{}, Rules: []detect.Rule{}}
+	b := Bundle{Strict: e != nil && e.Strict, Policies: []detect.Policy{}, Rules: []detect.Rule{}, DataTypes: map[string]string{}}
+	for _, t := range d.DataTypes {
+		b.DataTypes[t.Key] = t.Name
+	}
 	for _, p := range d.Policies {
 		if p.Enabled {
 			b.Policies = append(b.Policies, detect.Policy{ID: p.ID, Name: p.Name, Channels: p.Channels, DataTypes: p.DataTypes, Action: p.Action, Severity: p.Severity, Threshold: p.Threshold})

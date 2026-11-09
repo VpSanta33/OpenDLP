@@ -1,0 +1,25 @@
+# Linux systemd 服务（统信 UOS / 麒麟 / 通用发行版）
+# 安装：
+#   sudo install -m 0755 opendlp-agent-linux-amd64 /usr/local/bin/opendlp-agent
+#   sudo install -d -m 0700 /etc/opendlp && sudo install -m 0600 agent.json /etc/opendlp/agent.json
+#   sudo install -m 0644 opendlp-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now opendlp-agent
+[Unit]
+Description=OpenDLP Endpoint Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/opendlp-agent run -config /etc/opendlp/agent.json -log-json
+Restart=always
+RestartSec=10
+# Agent 需要读取并移动用户写入 U 盘的文件，因此以 root 运行；其余能力按需收紧
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+StateDirectory=opendlp-agent
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

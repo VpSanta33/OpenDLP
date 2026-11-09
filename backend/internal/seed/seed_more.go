@@ -304,6 +304,12 @@ var ruleDataType = map[string]string{
 	"工程图纸文件类型":       "design",
 }
 
+// Upgrade 启动时的数据升级（须在写锁内调用）：补齐新增集成项、修复重复终端编号。
+func Upgrade(d *store.Data) {
+	EnsureIntegrations(d)
+	store.RepairEndpointIDs(d)
+}
+
 // EnsureIntegrations 为旧版本数据补齐新增的集成项（须在写锁内调用）。
 func EnsureIntegrations(d *store.Data) {
 	for _, base := range baseIntegrations() {

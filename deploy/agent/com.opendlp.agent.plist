@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd 守护进程
+  安装：
+    sudo install -m 0755 opendlp-agent-darwin-arm64 /usr/local/bin/opendlp-agent
+    sudo mkdir -p "/Library/Application Support/OpenDLP" && sudo install -m 0600 agent.json "/Library/Application Support/OpenDLP/agent.json"
+    sudo install -m 0644 com.opendlp.agent.plist /Library/LaunchDaemons/
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.opendlp.agent.plist
+  注意：需在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中为 /usr/local/bin/opendlp-agent 授权（或通过 MDM 下发 PPPC 描述文件），
+  否则无法读取可移动介质与用户目录中的文件。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.opendlp.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/opendlp-agent</string>
+    <string>run</string>
+    <string>-log-json</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardErrorPath</key><string>/Library/Logs/opendlp-agent.log</string>
+</dict>
+</plist>

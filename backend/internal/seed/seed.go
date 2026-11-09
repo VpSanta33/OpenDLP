@@ -335,6 +335,7 @@ func Demo(ctx context.Context, st *store.Store, nowT time.Time, demoPassword str
 			}
 			d.Endpoints = append(d.Endpoints, ep)
 		}
+		d.Seq["endpoint"] = len(d.Endpoints)
 		d.Settings["licenseSeats"], d.Settings["licenseExpiry"], d.Settings["licenseNo"] = 3000.0, time.UnixMilli(now).AddDate(0, 8, 0).Format("2006-01-02"), "ODLP-DEMO-0001"
 
 		/* 数据资产 */

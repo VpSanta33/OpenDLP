@@ -190,6 +190,46 @@ func NextSeq(d *Data, kind string) int {
 	return d.Seq[kind]
 }
 
+// NewEndpointID 分配未被占用的终端编号（须在写锁内调用）。
+func NewEndpointID(d *Data) string {
+	used := make(map[string]bool, len(d.Endpoints))
+	for _, e := range d.Endpoints {
+		used[e.ID] = true
+	}
+	for {
+		id := fmt.Sprintf("EP%d", NextSeq(d, "endpoint"))
+		if !used[id] {
+			return id
+		}
+	}
+}
+
+// RepairEndpointIDs 修复旧版本演示数据中重复的终端编号（须在写锁内调用）：
+// 重复项重新编号，绑定该主机的 Agent 凭据随之迁移。返回修复数量。
+func RepairEndpointIDs(d *Data) int {
+	seen := map[string]bool{}
+	fixed := 0
+	for _, e := range d.Endpoints {
+		if !seen[e.ID] {
+			seen[e.ID] = true
+			continue
+		}
+		old := e.ID
+		var cred *AgentCred
+		if c := d.AgentCreds[old]; c != nil && c.Host == e.Host {
+			cred = c
+			delete(d.AgentCreds, old)
+		}
+		e.ID = NewEndpointID(d)
+		seen[e.ID] = true
+		if cred != nil {
+			d.AgentCreds[e.ID] = cred
+		}
+		fixed++
+	}
+	return fixed
+}
+
 /* ---------- 便捷查询（须在锁内调用） ---------- */
 
 func (d *Data) Admin(acc string) *Admin {

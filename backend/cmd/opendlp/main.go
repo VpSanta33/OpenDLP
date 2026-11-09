@@ -129,7 +129,7 @@ func run(o options) error {
 	if created {
 		slog.Info("数据库已初始化基础数据（内置角色、识别规则、渠道字典）")
 	}
-	st.Write(seed.EnsureIntegrations) // 升级时补齐新增的集成项
+	st.Write(seed.Upgrade) // 升级时补齐新增的集成项、修复历史数据
 	if o.demo {
 		n, err := st.CountIncidents(ctx, store.IncidentFilter{})
 		if err != nil {

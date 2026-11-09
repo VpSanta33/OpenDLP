@@ -1,0 +1,11 @@
+{
+  "server": "https://dlp.corp.example",
+  "enrollToken": "从控制台「终端管理 → 部署 Agent」复制的注册令牌",
+  "removable": true,
+  "scanSeconds": 5,
+  "watch": [
+    { "path": "~/Library/CloudStorage", "channel": "cloud", "label": "网盘同步目录" },
+    { "path": "~/Documents/WeChat Files", "channel": "im", "label": "微信文件" }
+  ],
+  "notify": true
+}

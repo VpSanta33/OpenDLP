@@ -211,7 +211,7 @@ func upsertEndpoint(d *store.Data, host string, now int64, isNew *bool) *store.E
 			return x
 		}
 	}
-	e := &store.Endpoint{ID: fmt.Sprintf("EP%d", store.NextSeq(d, "endpoint")), Host: host, First: now, Status: "online"}
+	e := &store.Endpoint{ID: store.NewEndpointID(d), Host: host, First: now, Status: "online"}
 	d.Endpoints = append(d.Endpoints, e)
 	*isNew = true
 	return e
