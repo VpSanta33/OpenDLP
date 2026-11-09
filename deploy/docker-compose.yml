@@ -1,0 +1,61 @@
+# OpenDLP 生产部署：PostgreSQL + OpenDLP + Caddy（自动 HTTPS）
+# 使用：cp .env.example .env && 编辑 .env && docker compose up -d
+name: opendlp
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opendlp
+      POSTGRES_DB: opendlp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opendlp -d opendlp"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      args:
+        VERSION: ${OPENDLP_VERSION:-3.3.0}
+    image: opendlp:${OPENDLP_VERSION:-3.3.0}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      OPENDLP_DATABASE_URL: postgres://opendlp:${POSTGRES_PASSWORD}@db:5432/opendlp?sslmode=disable
+      OPENDLP_AGENT_TOKEN: ${OPENDLP_AGENT_TOKEN:?请在 .env 中设置 OPENDLP_AGENT_TOKEN}
+      OPENDLP_SETUP_TOKEN: ${OPENDLP_SETUP_TOKEN:-}
+      OPENDLP_TRUST_PROXY: "true"
+      OPENDLP_TZ: ${OPENDLP_TZ:-Asia/Shanghai}
+    volumes:
+      - appdata:/app/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      OPENDLP_DOMAIN: ${OPENDLP_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  appdata:
+  caddy_data:
+  caddy_config:

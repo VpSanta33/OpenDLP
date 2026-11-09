@@ -1,0 +1,6 @@
+.git
+.claude
+backend/bin
+backend/data
+**/*.log
+deploy/.env

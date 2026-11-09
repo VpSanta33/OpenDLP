@@ -1,0 +1,11 @@
+# 自动申请并续期 HTTPS 证书（域名需解析到本机；localhost 使用 Caddy 内置 CA）
+{$OPENDLP_DOMAIN} {
+	reverse_proxy app:8080 {
+		# 实时推送（SSE）需要立即转发
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

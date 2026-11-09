@@ -1,0 +1,18 @@
+# 系统文件
+.DS_Store
+*.log
+
+# 构建产物与本地数据
+backend/bin/
+backend/data/
+agent/bin/
+agent/data/
+
+# 本地密钥配置（切勿提交）
+.env
+.env.local
+**/.env.local
+deploy/.env
+
+# 本地工具配置
+.claude/settings.local.json

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenDLP · 企业数据防泄漏管理平台</title>
+  <meta name="description" content="OpenDLP 企业级数据防泄漏（DLP）管理控制台">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E">
+  <script src="js/boot.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 启动加载屏 -->
+  <div id="boot" aria-hidden="true">
+    <div>
+      <div class="boot-logo">
+        <svg viewBox="0 0 64 72" fill="none">
+          <defs>
+            <linearGradient id="bootG" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#2563eb"/>
+            </linearGradient>
+          </defs>
+          <path d="M32 68s28-12 28-34V12L32 3 4 12v22c0 22 28 34 28 34z" stroke="url(#bootG)" stroke-width="3" stroke-linejoin="round" fill="rgba(37,99,235,.08)"/>
+          <rect x="21" y="32" width="22" height="17" rx="3" stroke="#93c5fd" stroke-width="2.6"/>
+          <path d="M25.5 32v-5a6.5 6.5 0 0 1 13 0v5" stroke="#93c5fd" stroke-width="2.6" stroke-linecap="round"/>
+        </svg>
+        <span class="boot-scan"></span>
+      </div>
+      <div class="boot-title">OpenDLP</div>
+      <div class="boot-sub">企业数据防泄漏管理平台</div>
+      <div class="boot-bar"><i></i></div>
+      <div class="boot-status" id="bootStatus">正在连接管理服务…</div>
+    </div>
+  </div>
+
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/dashboard">
+        <span class="brand-logo"><i data-ic="shield-check"></i></span>
+        <span class="brand-text">
+          <span class="brand-name">OpenDLP</span>
+          <span class="brand-sub">数据防泄漏平台</span>
+        </span>
+      </a>
+      <nav class="nav" id="nav" aria-label="主导航"></nav>
+      <div class="side-foot">
+        <div class="engine" id="engineBox" role="button" tabindex="0" title="查看系统运维">
+          <span class="pulse-dot"></span>
+          <span class="engine-text">
+            <b>正在连接…</b>
+            <small>-</small>
+          </span>
+        </div>
+      </div>
+    </aside>
+    <div class="side-ov" id="sideOv"></div>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="menuBtn" aria-label="切换导航"><i data-ic="menu"></i></button>
+        <nav class="crumbs" id="crumbs" aria-label="面包屑"></nav>
+        <div class="top-sp"></div>
+        <button class="search-trigger" id="searchBtn" aria-label="全局搜索">
+          <i data-ic="search"></i><span>搜索页面、事件、操作…</span><kbd id="kbdHint">⌘K</kbd>
+        </button>
+        <div class="top-act">
+          <span class="env-pill"><i></i>-</span>
+          <button class="icon-btn" id="themeBtn" aria-label="切换主题"></button>
+          <div class="pop-wrap">
+            <button class="icon-btn" id="taskBtn" aria-label="下载中心" title="下载中心"><i data-ic="download"></i><span class="cnt-badge"></span></button>
+            <div class="pop pop-task" id="taskPop"></div>
+          </div>
+          <div class="pop-wrap">
+            <button class="icon-btn" id="bellBtn" aria-label="通知"><i data-ic="bell"></i><span class="dot"></span></button>
+            <div class="pop" id="notePop"></div>
+          </div>
+          <div class="pop-wrap">
+            <button class="user-btn" id="userBtn" aria-label="用户菜单">
+              <span class="avatar">-</span>
+              <span class="user-txt"><b>-</b><small>-</small></span>
+              <i data-ic="chevron-down"></i>
+            </button>
+            <div class="pop pop-menu" id="userPop"></div>
+          </div>
+        </div>
+      </header>
+      <main class="content" id="view"></main>
+    </div>
+  </div>
+
+  <div id="toast-root" aria-live="polite"></div>
+
+  <script src="js/icons.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/pages/dashboard.js"></script>
+  <script src="js/pages/incidents.js"></script>
+  <script src="js/pages/ueba.js"></script>
+  <script src="js/pages/policies.js"></script>
+  <script src="js/pages/rules.js"></script>
+  <script src="js/pages/discovery.js"></script>
+  <script src="js/pages/approvals.js"></script>
+  <script src="js/pages/endpoints.js"></script>
+  <script src="js/pages/reports.js"></script>
+  <script src="js/pages/audit.js"></script>
+  <script src="js/pages/iam.js"></script>
+  <script src="js/pages/ops.js"></script>
+  <script src="js/pages/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
