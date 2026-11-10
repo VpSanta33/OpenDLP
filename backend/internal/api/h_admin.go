@@ -23,11 +23,6 @@ import (
 
 /* ---------- 组织与权限 ---------- */
 
-// POST /api/v1/iam/ad-sync —— LDAP 同步连接器尚未内置，返回明确提示（组织数据请使用 CSV 导入）。
-func (s *Server) handleADSync(w http.ResponseWriter, r *http.Request, a *Actor) {
-	writeErr(w, http.StatusNotImplemented, "当前版本未内置 LDAP 同步连接器，请使用「导入 CSV」维护组织架构")
-}
-
 // POST /api/v1/iam/employees/import {csv, mode} —— 导入组织架构。
 // CSV 列：工号,姓名,部门,职位,邮箱,状态(在职/离职中/已离职),是否部门负责人(是/否)。mode=replace 时整体替换，否则按工号合并。
 func (s *Server) handleEmployeeImport(w http.ResponseWriter, r *http.Request, a *Actor) {
@@ -527,7 +522,7 @@ func (s *Server) handleIntegrationSave(w http.ResponseWriter, r *http.Request, a
 	})
 }
 
-// POST /api/v1/ops/diagnose|backup|rules-update|trial
+// POST /api/v1/ops/diagnose|backup
 func (s *Server) handleOpsAction(w http.ResponseWriter, r *http.Request, a *Actor) {
 	switch r.PathValue("action") {
 	case "diagnose":
@@ -580,29 +575,6 @@ func (s *Server) handleOpsAction(w http.ResponseWriter, r *http.Request, a *Acto
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"file": filepath.Base(path), "size": humanSize(int(size))})
-	case "rules-update":
-		if !s.Cfg.Demo {
-			writeErr(w, http.StatusNotImplemented, "未配置规则库更新源，请通过离线规则包升级")
-			return
-		}
-		cur := ""
-		s.St.Read(func(d *store.Data) { cur, _ = d.Settings["ruleVersion"].(string) })
-		latest := time.Now().In(s.St.Loc).Format("2006.01.02")
-		if cur == latest {
-			writeJSON(w, http.StatusOK, map[string]any{"upToDate": true, "version": cur})
-			return
-		}
-		job := s.Jobs.Start(a.Acc, "rules-update", "规则库更新至 "+latest, 4*time.Second, func() (string, string, []byte, error) {
-			s.St.Write(func(d *store.Data) {
-				d.Settings["ruleVersion"] = latest
-				s.auditIn(d, a, "规则变更", "规则库更新至 "+latest+"（签名校验通过，已下发 6 个检测节点）", true, "")
-			})
-			return "", "", nil, nil
-		})
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "version": latest})
-	case "trial":
-		s.audit(a, "配置变更", "申请模块试用授权", true, "")
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		writeErr(w, http.StatusNotFound, "不支持的操作")
 	}
@@ -637,8 +609,7 @@ func (s *Server) backup(ctx context.Context) (string, int64, error) {
 /* ---------- 系统设置 ---------- */
 
 var settingKinds = map[string]string{
-	"ocr": "bool", "edm": "bool", "fp": "bool", "ml": "bool", "mail": "bool", "wecom": "bool", "ding": "bool", "siem": "bool", "evi": "bool", "mask": "bool",
-	"sens": "num", "freq": "str", "ret1": "str", "ret2": "str", "comp": "list",
+	"mail": "bool", "wecom": "bool", "ding": "bool", "siem": "bool", "freq": "str", "ret1": "str",
 	"licenseNo": "str", "licenseSeats": "seats", "licenseExpiry": "date", "consoleUrl": "url", "pwdMaxAge": "days", "aiRedact": "bool", "aiReport": "bool",
 }
 

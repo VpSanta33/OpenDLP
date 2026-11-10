@@ -347,9 +347,10 @@ func (s *Server) handleLeaderDecision(w http.ResponseWriter, r *http.Request) {
 		case req.Leader != x.Leader:
 			code, msg = http.StatusForbidden, "审批人与部门负责人不一致"
 		case req.Approve:
-			x.Stage = 2
+			x.Stage, x.LeaderAt, x.LeaderNote = 2, time.Now().UnixMilli(), clip(req.Comment, 500)
 		default:
 			x.Status, x.Approver, x.Comment, x.DecidedAt = "rejected", x.Leader, clip(req.Comment, 500), time.Now().UnixMilli()
+			x.LeaderAt, x.LeaderNote = x.DecidedAt, x.Comment
 		}
 		if x != nil {
 			a = *x
@@ -406,4 +407,20 @@ func (s *Server) handleDiscoveryResult(w http.ResponseWriter, r *http.Request) {
 		rp.Total, rp.Sens, rp.Risk, rp.Levels, rp.Last = req.Total, req.Sens, min(100, max(0, req.Risk)), lv, time.Now().UnixMilli()
 	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// GET /api/v1/ingest/approvals/{id} —— 提交方（审批门户 / 终端）查询审批结果，据此决定是否放行外发。
+func (s *Server) handleApprovalStatus(w http.ResponseWriter, r *http.Request) {
+	var out map[string]any
+	s.St.Read(func(d *store.Data) {
+		if x := findApproval(d, r.PathValue("id")); x != nil {
+			out = map[string]any{"id": x.ID, "status": x.Status, "stage": x.Stage, "approver": x.Approver, "comment": x.Comment,
+				"decidedAt": x.DecidedAt, "leaderAt": x.LeaderAt, "leaderComment": x.LeaderNote, "deadline": x.Deadline}
+		}
+	})
+	if out == nil {
+		writeErr(w, http.StatusNotFound, "审批单不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

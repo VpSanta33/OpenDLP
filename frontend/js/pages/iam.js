@@ -189,7 +189,7 @@
       <div class="grid adm-grid">
         ${card('管理员账号', `<div class="table-wrap"><table class="table"><thead><tr><th>账号</th><th>角色</th><th>双因素认证</th><th>登录来源限制</th><th>最近登录</th><th>状态</th><th></th></tr></thead><tbody id="adm"></tbody></table></div>`, { cls: 'span-2', extra: `<button class="btn btn-sm btn-primary" id="newAdm" data-perm="iam:cfg">${ic('plus')}新建管理员</button>` })}
         ${card('安全策略', `<ul class="pol-list">
-          ${[['key', '口令复杂度', '≥ 12 位，含大小写字母、数字与符号，不得包含账号名'], ['clock', '口令有效期', maxAge() ? `${maxAge()} 天强制更换；初始口令与重置后的口令首次登录须修改` : '未启用定期更换（可在系统设置中开启）'], ['lock', '登录失败锁定', '连续 5 次失败锁定 15 分钟'], ['shield-check', '双因素认证', '新建管理员强制绑定 TOTP 身份验证器'], ['globe', '登录来源限制', `按账号配置 IP / 网段，已有 <b id="aA">0</b> 个账号启用`], ['logout', '会话超时', '无操作 30 分钟、最长 12 小时自动退出']].map(([i, t, d]) => `<li>${ic(i)}<div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ul>`, { sub: '符合等保 2.0 身份鉴别要求' })}
+          ${[['key', '口令复杂度', '≥ 12 位，含大小写字母、数字与符号，不得包含账号名'], ['clock', '口令有效期', maxAge() ? `${maxAge()} 天强制更换；初始口令与重置后的口令首次登录须修改` : '未启用定期更换（可在系统设置中开启）'], ['lock', '登录失败锁定', '连续 5 次失败锁定 15 分钟'], ['shield-check', '双因素认证', '新建管理员强制绑定 TOTP 身份验证器'], ['globe', '登录来源限制', `按账号配置 IP / 网段，已有 <b id="aA">0</b> 个账号启用`], ['logout', '会话超时', '无操作 30 分钟、最长 12 小时自动退出']].map(([i, t, d]) => `<li>${ic(i)}<div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ul>`, { sub: '当前生效的身份鉴别措施' })}
       </div>`;
     const q = s => el.querySelector(s);
     const pwdDue = a => a.mustChange || (maxAge() && a.pwdChanged && Date.now() - a.pwdChanged > (maxAge() - 7) * 864e5);

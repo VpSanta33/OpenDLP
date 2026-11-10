@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
@@ -283,4 +284,48 @@ func waitJob(t *testing.T, c *client, id string) map[string]any {
 	}
 	t.Fatal("任务超时")
 	return nil
+}
+
+func TestApprovalStatusQuery(t *testing.T) {
+	s, ts := newTestServer(t, false)
+	c := newClient(t, ts)
+	initAdmin(t, s, c)
+	// 导入组织架构，张伟所在部门的负责人为李娜
+	c.do("POST", "/api/v1/iam/employees/import", `{"csv":"工号,姓名,部门\nE1,张伟,研发中心\nE2,李娜,研发中心,经理,,在职,是"}`, true)
+	code, a := c.agent("/api/v1/ingest/approvals", `{"user":"张伟","file":"方案.docx","dataType":"contract","channel":"email","to":"a@b.example","reason":"投标"}`)
+	if code != http.StatusCreated || a["stage"].(float64) != 1 {
+		t.Fatalf("有部门负责人时应先进入负责人审批：%d %v", code, a)
+	}
+	id := a["id"].(string)
+	get := func() map[string]any {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/ingest/approvals/"+id, nil)
+		req.Header.Set("Authorization", "Bearer agent-token-for-tests")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil || res.StatusCode != 200 {
+			t.Fatalf("查询审批状态失败：%v %v", err, res)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		json.NewDecoder(res.Body).Decode(&out)
+		return out
+	}
+	if st := get(); st["status"] != "pending" || st["stage"].(float64) != 1 {
+		t.Fatalf("初始状态错误：%v", st)
+	}
+	if code, _ := c.agent("/api/v1/ingest/approvals/"+id+"/leader", `{"leader":"李娜","approve":true,"comment":"项目需要"}`); code != 200 {
+		t.Fatalf("负责人审批失败：%d", code)
+	}
+	if st := get(); st["stage"].(float64) != 2 || st["leaderComment"] != "项目需要" || st["leaderAt"].(float64) == 0 {
+		t.Fatalf("应记录负责人意见与时间：%v", st)
+	}
+	if code, out := c.do("POST", "/api/v1/approvals/"+id+"/decision", `{"decision":"approve","comment":"同意"}`, true); code != 200 {
+		t.Fatalf("安全审批失败：%d %v", code, out)
+	}
+	if st := get(); st["status"] != "approved" || st["comment"] != "同意" {
+		t.Fatalf("提交方应能查询到最终结果：%v", st)
+	}
+	// 未携带令牌不能查询
+	if res, _ := http.Get(ts.URL + "/api/v1/ingest/approvals/" + id); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("未授权查询应拒绝：%d", res.StatusCode)
+	}
 }

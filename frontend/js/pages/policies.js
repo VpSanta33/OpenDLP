@@ -23,9 +23,9 @@
 
   /* ---------- 新建策略向导 ---------- */
   function openWizard(onDone) {
-    const st = { step: 0, sev: 'high', types: new Set(['idcard']), chs: new Set(['email', 'im']), th: 10, action: 'block', notify: new Set(['admin', 'user']) };
+    const st = { step: 0, sev: 'high', types: new Set(['idcard']), chs: new Set(['email', 'im']), th: 10, action: 'block', };
     const html = `
-      <div class="md-head"><div><h2>新建防泄漏策略</h2><p>3 步完成策略配置，发布后实时下发至全部在线终端</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
+      <div class="md-head"><div><h2>新建防泄漏策略</h2><p>3 步完成策略配置，终端 Agent 在下次心跳（约 1 分钟）时同步</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
       <div class="steps">${['基本信息', '检测规则', '响应动作'].map((s, i) => `${i ? '<div class="step-line"><i></i></div>' : ''}<div class="step" data-st="${i}"><b><span>${i + 1}</span>${ic('check')}</b>${s}</div>`).join('')}</div>
       <div class="md-body">
         <div class="step-pane" data-p="0">
@@ -39,8 +39,7 @@
           <div class="field"><div class="lbl">匹配阈值 <span class="hint">单次外发命中 ≥ <b id="thV">10</b> 处时触发</span></div><input type="range" class="range" id="wTh" min="1" max="100" value="10" aria-label="匹配阈值"></div>
         </div>
         <div class="step-pane" data-p="2">
-          <div class="field"><div class="lbl">响应动作</div><div class="act-grid" data-g="action">${[['block', '阻断外发', '直接阻止传输并向用户提示原因', 'ban'], ['encrypt', '加密放行', '自动加密文件后允许外发', 'lock'], ['audit', '仅审计', '允许外发，留存完整审计证据', 'eye']].map(([v, t, d, icn]) => `<div class="act-opt ${v === st.action ? 'on' : ''}" data-v="${v}"><div class="act-ic">${ic(icn)}</div><b>${t}</b><p>${d}</p></div>`).join('')}</div></div>
-          <div class="field"><div class="lbl">告警通知</div>${[['admin', '通知安全管理员'], ['user', '向用户本人弹窗提示'], ['leader', '抄送直属主管']].map(([v, l]) => `<label class="set-row compact"><span>${l}</span><span class="switch"><input type="checkbox" data-n="${v}" ${st.notify.has(v) ? 'checked' : ''}><span></span></span></label>`).join('')}</div>
+          <div class="field"><div class="lbl">响应动作</div><div class="act-grid" data-g="action">${[['block', '阻断 / 隔离', '终端 Agent 将文件移入隔离区并留下说明；网关按自身能力阻断', 'ban'], ['encrypt', '加密放行', '需由支持加密的网关执行；终端 Agent 按审计记录', 'lock'], ['audit', '仅审计', '允许外发，生成事件记录', 'eye']].map(([v, t, d, icn]) => `<div class="act-opt ${v === st.action ? 'on' : ''}" data-v="${v}"><div class="act-ic">${ic(icn)}</div><b>${t}</b><p>${d}</p></div>`).join('')}</div></div>
           <div class="summary" id="wSum"></div>
         </div>
       </div>
@@ -80,7 +79,6 @@
     }
     nameIn.addEventListener('input', () => { nameIn.classList.remove('err'); q('#wNameErr').classList.remove('show'); });
     q('#wTh').addEventListener('input', e => { st.th = +e.target.value; q('#thV').textContent = st.th; });
-    panel.addEventListener('change', e => { const n = e.target.dataset.n; if (n) e.target.checked ? st.notify.add(n) : st.notify.delete(n); });
     panel.addEventListener('click', e => {
       const o = e.target.closest('[data-g] [data-v]'); if (!o) return;
       const g = o.closest('[data-g]').dataset.g, v = o.dataset.v;
@@ -97,7 +95,7 @@
       const body = { name: nameIn.value.trim(), desc: q('#wDesc').value.trim(), channels: [...st.chs], dataTypes: [...st.types], action: st.action, severity: st.sev, threshold: st.th };
       act(next, () => API.post('/policies', body), p => {
         close(); onDone(p);
-        toast(`策略「${esc(p.name)}」已发布，正在下发至 ${D.fleet.online.toLocaleString()} 台在线终端`, { type: 'success', title: '发布成功' });
+        toast(`策略「${esc(p.name)}」已发布，终端 Agent 将在下次心跳时同步`, { type: 'success', title: '发布成功' });
       });
     });
     panel.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type === 'text') { e.preventDefault(); next.click(); } });
@@ -109,7 +107,7 @@
     html() {
       return `
       <div class="page-head">
-        <div><h1>策略管理</h1><p>配置敏感数据识别规则与外发响应动作，策略变更实时下发至全部终端</p></div>
+        <div><h1>策略管理</h1><p>按外发渠道与数据类型配置响应动作，终端 Agent 在心跳时同步策略变更</p></div>
         <div class="head-actions"><button class="btn" data-act="tpl" data-perm="policies:cfg">${ic('copy')}合规模板</button><button class="btn btn-primary" data-act="new" data-perm="policies:cfg">${ic('plus')}新建策略</button></div>
       </div>
       <div class="toolbar">
@@ -138,7 +136,7 @@
           Object.assign(p, upd);
           cardEl.classList.toggle('off', !p.enabled);
           stat();
-          toast(`策略「${esc(p.name)}」已${p.enabled ? '启用，正在下发至终端' : '停用'}`, { type: p.enabled ? 'success' : 'warning' });
+          toast(`策略「${esc(p.name)}」已${p.enabled ? '启用，终端 Agent 将在下次心跳时同步' : '停用'}`, { type: p.enabled ? 'success' : 'warning' });
           if (filt !== 'all') setTimeout(render, 450);
         }).catch(err => { sw.checked = !want; UI.apiError(err); }).finally(() => { sw.disabled = !UI.canDo('policies', 'cfg'); });
       });

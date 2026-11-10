@@ -175,6 +175,8 @@ type Approval struct {
 	Approver   string          `json:"approver,omitempty"`
 	Comment    string          `json:"comment,omitempty"`
 	DecidedAt  int64           `json:"decidedAt,omitempty"`
+	LeaderAt   int64           `json:"leaderAt,omitempty"`      // 部门负责人审批时间
+	LeaderNote string          `json:"leaderComment,omitempty"` // 部门负责人意见
 	Conditions *ReleaseOptions `json:"conditions,omitempty"`
 }
 

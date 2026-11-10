@@ -9,7 +9,7 @@
     html() {
       return `
       <div class="page-head">
-        <div><h1>审计日志</h1><p>记录所有管理员操作，满足等保 2.0 与 ISO 27001 审计留痕要求，日志防篡改存储</p></div>
+        <div><h1>审计日志</h1><p>记录管理员操作与系统行为；SHA-256 哈希链与数据库触发器防止篡改与删除</p></div>
         <div class="head-actions"><button class="btn" data-act="verify">${ic('shield-check')}完整性校验</button><button class="btn btn-primary" data-act="export" data-perm="audit:exp">${ic('download')}导出日志</button></div>
       </div>
       ${card('操作记录', `

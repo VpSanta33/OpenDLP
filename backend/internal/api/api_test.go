@@ -278,12 +278,12 @@ func TestIngestFlow(t *testing.T) {
 	_, en := c.do("POST", "/api/v1/setup/begin", `{"token":"`+tok+`","account":"secadmin","name":"王安全","password":"`+testPW+`"}`, true)
 	otp, _ := auth.TOTPCode(en["secret"].(string), time.Now())
 	c.do("POST", "/api/v1/setup/complete", `{"enrollment":"`+en["enrollment"].(string)+`","code":"`+otp+`"}`, true)
-	if code, _ := c.do("POST", "/api/v1/endpoints/"+epID+"/actions", `{"action":"isolate"}`, true); code != 200 {
+	if code, _ := c.do("POST", "/api/v1/endpoints/"+epID+"/actions", `{"action":"scan"}`, true); code != 200 {
 		t.Fatalf("下发指令失败：%d", code)
 	}
 	_, hb := c.agent("/api/v1/ingest/heartbeat", `{"host":"BJ-RD-0001","user":"张伟","agent":"3.2.1"}`)
 	cmds := hb["commands"].([]any)
-	if len(cmds) != 1 || cmds[0].(map[string]any)["action"] != "isolate" {
+	if len(cmds) != 1 || cmds[0].(map[string]any)["action"] != "scan" {
 		t.Fatalf("终端未领取到指令：%v", hb)
 	}
 	if _, hb2 := c.agent("/api/v1/ingest/heartbeat", `{"host":"BJ-RD-0001"}`); len(hb2["commands"].([]any)) != 0 {

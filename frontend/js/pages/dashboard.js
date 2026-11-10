@@ -77,7 +77,7 @@
     const total = () => counts.reduce((a, b) => a + b, 0);
     const updStats = () => {
       const t = total();
-      statsEl.innerHTML = `<span>今日流经引擎<b>${fmt(t)}</b></span><span>阻断率<b>${t ? (counts[2] / t * 100).toFixed(1) + '%' : '-'}</b></span><span>审计 / 加密<b>${fmt(counts[1])}</b></span><span>启用识别规则<b>${fmt(rules)} 条</b></span>`;
+      statsEl.innerHTML = `<span>今日检测<b>${fmt(t)}</b></span><span>阻断率<b>${t ? (counts[2] / t * 100).toFixed(1) + '%' : '-'}</b></span><span>审计 / 加密<b>${fmt(counts[1])}</b></span><span>启用识别规则<b>${fmt(rules)} 条</b></span>`;
     };
     updStats();
 
@@ -145,15 +145,15 @@
       const heatLg = `<div class="heat-lg">少<i style="--v:.1"></i><i style="--v:.3"></i><i style="--v:.55"></i><i style="--v:.8"></i><i style="--v:1"></i>多</div>`;
       return `
       <div class="page-head">
-        <div><h1>安全态势总览</h1><p>实时监控企业敏感数据流转与泄漏风险 · 数据更新于 <span id="lastUpd">${fmtTime(Date.now(), false)}</span></p></div>
+        <div><h1>安全态势总览</h1><p>外发检测、阻断与事件概况 · 数据更新于 <span id="lastUpd">${fmtTime(Date.now(), false)}</span></p></div>
         <div class="head-actions">${seg('range', [['today', '今日'], ['7d', '近 7 天'], ['30d', '近 30 天']], '30d')}
           <button class="btn" data-act="export">${ic('download')}导出报告</button></div>
       </div>
       <div class="callout empty-banner" id="emptyBanner" hidden>${ic('activity')}<div><b>尚未接收到检测数据。</b>请在终端与网关部署 OpenDLP Agent，并配置上报令牌（OPENDLP_AGENT_TOKEN）。数据上报后这里将实时展示外发检测态势。${UI.can('endpoints') ? ' <a href="#/endpoints">查看终端接入方式</a>' : ''}</div></div>
       <div class="kpis">${KPIS.map(kpiHtml).join('')}</div>
       <div class="grid">
-        ${card('综合风险指数', `<div id="gauge" class="gauge-wrap"></div><ul class="factors" id="factors"></ul>`, { sub: '基于事件、行为与资产暴露度综合计算', extra: '<span class="tag" id="riskTag">计算中</span>' })}
-        ${card('数据外发通道实时监测', '<div id="flow" class="flow"></div><div class="flow-stats" id="flowStats"></div>', { cls: 'span-2', sub: '外发内容经 DLP 引擎深度识别后执行策略响应', extra: '<span class="live"><i></i>LIVE</span>' })}
+        ${card('综合风险指数', `<div id="gauge" class="gauge-wrap"></div><ul class="factors" id="factors"></ul>`, { sub: '近 30 天：高危占比、离职人员外发、U 盘未阻断与策略启用率加权计算', extra: '<span class="tag" id="riskTag">计算中</span>' })}
+        ${card('数据外发通道实时监测', '<div id="flow" class="flow"></div><div class="flow-stats" id="flowStats"></div>', { cls: 'span-2', sub: '今日上报的检测按处置结果统计（连线动画仅为示意）', extra: '<span class="live"><i></i>LIVE</span>' })}
       </div>
       <div class="grid">
         ${card('事件趋势', '<div id="trend" class="chart-box"></div>', { cls: 'span-2', sub: '告警与阻断事件走势，悬停查看明细', extra: `<div class="lg">${lg}</div>` })}

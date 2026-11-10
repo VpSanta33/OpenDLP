@@ -25,13 +25,12 @@
         ${card('检测集群节点', '<div class="nodes" id="nodes"></div>', { cls: 'span-2', sub: '节点通过 /api/v1/ingest/nodes 上报心跳', extra: '<span class="pill pill-live">实时</span>' })}
         ${card('平台服务健康', '<ul class="svc" id="svc"></ul>', { sub: '实时检查' })}
       </div>
-      ${card('第三方集成', `<div class="integ" id="integ"></div>`, { sub: '身份源、安全运营、外发通道与通知协同' })}
+      ${card('第三方集成', `<div class="integ" id="integ"></div>`, { sub: '告警通道、SIEM 转发与 AI 大模型' })}
       <div class="grid g2" style="margin-top:16px">
         ${card('授权许可', `<ul class="lic"><li>${ic('key')}<span>许可编号</span><span class="sp"></span><b>${esc(S.licenseNo || '未配置')}</b></li><li>${ic('monitor')}<span>授权终端数</span><span class="sp"></span><b>${total ? fmt(total) : '未配置'}</b></li><li>${ic('clock')}<span>到期日期</span><span class="sp"></span><b>${esc(S.licenseExpiry || '未配置')}</b></li><li>${ic('users')}<span>已接入终端</span><span class="sp"></span><b>${fmt(used)}</b></li></ul>`, { sub: '在系统设置中维护', extra: UI.can('settings') ? '<a class="link" href="#/settings">编辑</a>' : '' })}
-        ${card('版本与规则库', `
-          <div class="ver"><div><span>平台版本</span><b id="pv">-</b><small id="pvs"></small></div><div><span>规则库</span><b id="rv">${esc(S.ruleVersion || '-')}</b><small id="rvs">离线规则包升级</small></div><div><span>Agent 最新版</span><b id="av">-</b><small id="avs"></small></div></div>
-          <div class="upd" id="upd"><div class="progress"><i></i></div><small class="muted" id="updT"></small></div>
-          <div class="ver-act"><button class="btn btn-primary" id="updBtn" data-perm="ops:cfg">${ic('download')}检查规则库更新</button><button class="btn" id="bk" data-perm="ops:cfg">${ic('save')}导出配置快照</button><span class="muted small">业务数据请使用 pg_dump 备份数据库</span></div>`, { sub: '平台与终端版本' })}
+        ${card('版本与备份', `
+          <div class="ver"><div><span>平台版本</span><b id="pv">-</b><small id="pvs"></small></div><div><span>Agent 最新版</span><b id="av">-</b><small id="avs"></small></div></div>
+          <div class="ver-act"><button class="btn" id="bk" data-perm="ops:cfg">${ic('save')}导出配置快照</button><span class="muted small">配置快照保存在服务端数据目录；事件与审计数据请使用 pg_dump 备份数据库</span></div>`, { sub: '平台与终端版本' })}
       </div>`;
     },
     mount(root) {
@@ -112,9 +111,6 @@
           ding: [['Webhook 地址', 'https://oapi.dingtalk.com/robot/send?access_token='], ['加签密钥', '', 1]],
           siem: [['Syslog 地址', ''], ['端口', '514'], ['协议', 'udp']],
           ai: [['接口地址', 'https://api.deepseek.com/v1'], ['模型', 'deepseek-chat'], ['API Key', '', 1]],
-          soar: [['平台地址', 'https://soar.corp.example'], ['API Key', '']],
-          casb: [['租户 ID', ''], ['API 端点', 'https://api.casb.example']],
-          itsm: [['ITSM 地址', 'https://itsm.corp.example'], ['工单类型', '安全事件']]
         }[it.key] || [['服务地址', ''], ['认证令牌', '']];
         // 已配置的集成使用服务端配置（密钥类字段以 ****** 掩码返回，保存时保持不变）
         const opt = new Set(tpl.filter(f => f[2]).map(f => f[0]));
@@ -145,30 +141,6 @@
 
       q('#diag').addEventListener('click', e => act(e.currentTarget, () => API.post('/ops/diagnose'), r => toast(r.issues.length ? `发现 ${r.issues.length} 项需关注：${r.issues.map(esc).join('；')}` : '未发现异常', { type: r.issues.length ? 'warning' : 'success', title: '诊断报告', dur: 6000 })));
       q('#bk').addEventListener('click', e => act(e.currentTarget, () => API.post('/ops/backup'), r => toast(`配置快照已保存至服务端 data/backups/${esc(r.file)}（${esc(r.size)}）`, { type: 'success', title: '导出成功' })));
-      q('#updBtn').addEventListener('click', async e => {
-        const b = e.currentTarget, box = q('#upd'), bar = box.querySelector('i'), txt = q('#updT');
-        const r = await act(b, () => API.post('/ops/rules-update'));
-        if (!r) return;
-        if (r.upToDate) { toast(`规则库已是最新版本 ${esc(r.version)}`, { type: 'info' }); return; }
-        b.disabled = true; box.classList.add('show');
-        const steps = [[0, '下载规则包…'], [30, '校验 SM2 数字签名…'], [55, '灰度下发至 dlp-engine-01…'], [80, '全量下发至检测节点…'], [100, '更新完成']];
-        const iv2 = setInterval(async () => {
-          let j;
-          try { j = await API.get('/jobs/' + r.job.id); } catch (err) { clearInterval(iv2); b.disabled = false; return; }
-          bar.style.width = j.progress + '%';
-          txt.textContent = steps.filter(s2 => j.progress >= s2[0]).pop()[1];
-          if (j.status !== 'run') {
-            clearInterval(iv2); b.disabled = false;
-            if (j.status === 'done') {
-              D.settings.ruleVersion = r.version;
-              q('#rv').textContent = r.version; q('#rvs').textContent = '已是最新版本';
-              toast(`规则库已更新至 ${esc(r.version)}，已下发至全部检测节点`, { type: 'success', title: '更新完成' });
-            }
-            setTimeout(() => box.classList.remove('show'), 1200);
-          }
-        }, 500);
-        UI.onCleanup(() => clearInterval(iv2));
-      });
     }
   };
 })();

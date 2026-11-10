@@ -82,7 +82,7 @@
       const hi = profiles.filter(p => p.score >= 80).length, mid = profiles.filter(p => p.score >= 60 && p.score < 80).length;
       return `
       <div class="page-head">
-        <div><h1>用户风险画像</h1><p>基于 UEBA 的用户与实体行为分析：自动学习个人与部门行为基线，识别内部威胁</p></div>
+        <div><h1>用户风险画像</h1><p>根据近 30 天 DLP 事件按规则计算每个用户的风险评分，并与所在部门平均水平对比</p></div>
         <div class="head-actions"><span class="pill">${ic('clock')}基于近 30 天 ${D.incidents.length} 起事件实时计算</span><button class="btn" id="exp" data-perm="incidents:exp">${ic('download')}导出严重事件</button></div>
       </div>
       <div class="mini-stats">
@@ -137,15 +137,14 @@
             <div class="ub-act">
               <button class="btn" data-a="watch" data-perm="ueba:op">${ic('eye')}<span>${watch.has(p.name) ? '移出观察名单' : '加入观察名单'}</span></button>
               <button class="btn" data-a="lvl" data-perm="ueba:op">${ic('shield')}提升管控等级</button>
-              <button class="btn btn-primary" data-a="case" data-perm="ueba:op">${ic('file-search')}发起调查</button>
             </div>
           </section>
           <div class="grid g2">
-            ${card('行为维度分析', '<div id="radar"></div>', { sub: '与所在部门行为基线对比' })}
+            ${card('行为维度分析', '<div id="radar"></div>', { sub: '与所在部门平均水平对比' })}
             ${card('风险评分趋势', '<div id="utrend" class="chart-box"></div>', { sub: '近 30 天', extra: `<span class="delta ${p.delta > 0 ? 'bad' : 'good'}">${ic(p.delta > 0 ? 'trend-up' : 'trend-down')}近 7 天 ${p.delta > 0 ? '+' : ''}${p.delta}</span>` })}
           </div>
           <div class="grid g2">
-            ${card('异常行为', !an.length ? `<div class="empty-st">${ic('shield-check')}<p>未发现异常行为</p></div>` : `<ol class="anom">${an.map((a, i) => `<li style="--i:${i}"><span class="an-ic sev-${a.sev}">${ic(a.icon)}</span><div><b>${a.title}</b><p>${esc(a.text)}</p><time>${fmtTime(a.ts)} · ${relTime(a.ts)}</time></div><em class="t-${a.sev === 'critical' || a.sev === 'high' ? 'danger' : 'warning'}">+${a.add}</em></li>`).join('')}</ol>`, { sub: `模型识别 ${an.length} 项偏离基线的行为`, extra: '<span class="muted small">分值为对风险评分的贡献</span>' })}
+            ${card('异常行为', !an.length ? `<div class="empty-st">${ic('shield-check')}<p>未发现异常行为</p></div>` : `<ol class="anom">${an.map((a, i) => `<li style="--i:${i}"><span class="an-ic sev-${a.sev}">${ic(a.icon)}</span><div><b>${a.title}</b><p>${esc(a.text)}</p><time>${fmtTime(a.ts)} · ${relTime(a.ts)}</time></div><em class="t-${a.sev === 'critical' || a.sev === 'high' ? 'danger' : 'warning'}">+${a.add}</em></li>`).join('')}</ol>`, { sub: `识别出 ${an.length} 项风险行为`, extra: '<span class="muted small">分值为对风险评分的贡献</span>' })}
             ${card('关联事件', inc.length ? `<ul class="mini-list">${inc.map(i => `<li data-inc="${i.id}">${sevBadge(i.severity)}<span>${esc(i.file)}</span>${chIcon(i.channel)}${actBadge(i.action)}</li>`).join('')}</ul>` : `<div class="empty-st">${ic('shield-check')}<p>近 30 天无关联事件</p></div>`, { sub: `共 ${p.inc.length} 起 DLP 事件`, extra: UI.can('incidents') ? `<a class="link" href="#/incidents">查看全部</a>` : '' })}
           </div>`;
         requestAnimationFrame(() => requestAnimationFrame(() => { const rg = q('.rg-v'); if (rg) rg.style.strokeDashoffset = rg.dataset.off; }));
@@ -174,13 +173,13 @@
           act(b, () => API.post('/ueba/watch', { user: p.name, on }), r => {
             D.watchlist = r.watchlist; watch.clear(); r.watchlist.forEach(n => watch.add(n));
             q('#wCnt').textContent = watch.size;
-            toast(on ? `${esc(p.name)} 已加入观察名单，其所有外发行为将实时推送` : `${esc(p.name)} 已移出观察名单`, { type: 'info' });
+            toast(on ? `${esc(p.name)} 已加入观察名单，其后续事件不论级别都会立即通过已开启的告警通道通知` : `${esc(p.name)} 已移出观察名单`, { type: 'info' });
             renderList(); renderProfile();
           });
         } else if (b.dataset.a === 'lvl') {
-          const ok = await confirmDialog({ title: `提升 ${esc(p.name)} 的管控等级`, text: '将对该用户启用「严格模式」：所有外发需审批、禁用 USB 写入、截屏叠加水印。该操作将记录到审计日志。', okText: '确认提升' });
-          if (ok) act(b, () => API.post('/ueba/strict', { user: p.name }), r => toast(`已对 ${esc(p.name)} 启用严格管控策略，已下发至终端 ${esc(r.host)}`, { type: 'success', title: '管控已升级' }));
-        } else act(b, () => API.post('/ueba/case', { user: p.name }), r => toast(`已创建调查工单 ${esc(r.case)}，并自动关联 ${r.linked} 起事件与终端取证快照`, { type: 'success', title: '调查已发起' }));
+          const ok = await confirmDialog({ title: `提升 ${esc(p.name)} 的管控等级`, text: '该用户使用的终端将启用严格管控：终端 Agent 把「仅审计」策略按阻断处理，未命中策略但含敏感内容的文件也会生成事件。该操作将记录到审计日志。', okText: '确认提升' });
+          if (ok) act(b, () => API.post('/ueba/strict', { user: p.name }), r => toast(r.hosts.length ? `已对 ${esc(p.name)} 的终端（${r.hosts.map(esc).join('、')}）启用严格管控，Agent 将在下次心跳时同步` : `${esc(p.name)} 名下暂无已接入的终端，未下发严格管控`, { type: r.hosts.length ? 'success' : 'warning', title: '管控等级' }));
+        }
       });
       q('#exp').addEventListener('click', () => UI.task(() => API.post('/exports', { kind: 'incidents', filter: { sev: 'critical' } })));
       renderList(); renderProfile();

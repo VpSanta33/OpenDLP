@@ -2,8 +2,8 @@
 (function () {
   'use strict';
   const { D, ic, $$, esc, fmt, fmtTime, relTime, countUp, toast, seg, initSeg, sevBadge, openLayer, confirmDialog, act } = UI;
-  const EPST = { online: '在线', offline: '离线', warning: '防护异常' };
-  const CMD = { push: '推送策略', scan: '远程扫描', isolate: '隔离终端', release: '解除隔离' };
+  const EPST = { online: '在线', offline: '离线', warning: '上报异常' };
+  const CMD = { push: '推送策略', scan: '远程扫描', isolate: '隔离终端', release: '解除隔离' }; // 历史指令可能包含后两种
   const CST = { pending: ['待领取', ''], delivered: ['执行中', 'b-primary'], done: ['已完成', 'b-success'], failed: ['失败', 'b-danger'] };
   const cmdName = a => CMD[a] || (a.startsWith('upgrade:') ? '升级至 v' + a.slice(8) : a);
   // 语义化版本比较
@@ -52,8 +52,6 @@
       <div class="dr-foot">
         <button class="btn" data-a="scan" data-perm="endpoints:op" ${e.status === 'offline' ? 'disabled' : ''}>${ic('file-search')}远程扫描</button>
         <button class="btn" data-a="push" data-perm="endpoints:op" ${e.status === 'offline' ? 'disabled' : ''}>${ic('send')}推送策略</button>
-        ${e.isolated ? `<button class="btn btn-primary" data-a="release" data-perm="endpoints:op">${ic('unlock')}解除隔离</button>`
-          : `<button class="btn btn-danger" data-a="iso" data-perm="endpoints:op" ${e.status === 'offline' ? 'disabled' : ''}>${ic('lock')}隔离终端</button>`}
         ${e.enrolled ? `<button class="icon-btn" data-a="revoke" data-perm="endpoints:cfg" title="吊销 Agent 凭据">${ic('ban')}</button>` : ''}
       </div>`;
     const { panel, close } = openLayer('drawer', html);
@@ -77,11 +75,6 @@
       }
       if (b.dataset.a === 'push') act(b, () => cmd('push'), r => (loadCmds(), toast(`已向 ${esc(e.host)} 下发策略同步指令（${r.policies} 条启用策略），${sent(r)}`, { type: 'success', title: '指令已下发' })));
       if (b.dataset.a === 'scan') act(b, () => cmd('scan'), r => (loadCmds(), toast(`已向 ${esc(e.host)} 下发本地敏感文件扫描指令（U 盘与监控目录），${sent(r)}`, { type: 'info', title: '指令已下发' })));
-      if (b.dataset.a === 'release') act(b, () => cmd('release'), r => { Object.assign(e, r.endpoint); close(); toast(`${esc(e.host)} 已解除网络隔离`, { type: 'success' }); onChange && onChange(); });
-      if (b.dataset.a === 'iso') {
-        confirmDialog({ title: `隔离终端 ${esc(e.host)}？`, text: '隔离后该终端将断开除管理服务器外的所有网络连接，用户将收到隔离通知。此操作会记录到审计日志。', okText: '确认隔离', danger: true })
-          .then(ok => ok && act(b, () => cmd('isolate'), r => { Object.assign(e, r.endpoint); close(); toast(`${esc(e.host)} 已进入网络隔离状态`, { type: 'warning', title: '终端已隔离' }); onChange && onChange(); }));
-      }
     });
   }
 
@@ -89,11 +82,11 @@
     title: '终端管理', icon: 'monitor',
     html() {
       const by = st => D.endpoints.filter(e => e.status === st).length;
-      const stats = [['已接入终端', D.endpoints.length, 'monitor', 'primary'], ['在线', by('online'), 'check', 'success'], ['离线', by('offline'), 'clock', 'muted'], ['防护异常', by('warning'), 'alert', 'warning']];
+      const stats = [['已接入终端', D.endpoints.length, 'monitor', 'primary'], ['在线', by('online'), 'check', 'success'], ['离线', by('offline'), 'clock', 'muted'], ['上报异常', by('warning'), 'alert', 'warning']];
       return `
       <div class="page-head">
-        <div><h1>终端管理</h1><p>管理已部署 DLP Agent 的办公终端，监控防护状态与策略同步情况</p></div>
-        <div class="head-actions"><button class="btn" data-act="export" data-perm="endpoints:exp">${ic('download')}导出清单</button><button class="btn" data-act="upgrade" data-perm="endpoints:op">${ic('refresh')}批量升级 Agent</button><button class="btn btn-primary" data-act="deploy" data-perm="endpoints:cfg">${ic('plus')}终端接入</button></div>
+        <div><h1>终端管理</h1><p>查看已接入的终端 Agent、策略同步情况与指令执行结果</p></div>
+        <div class="head-actions"><button class="btn" data-act="export" data-perm="endpoints:exp">${ic('download')}导出清单</button><button class="btn btn-primary" data-act="deploy" data-perm="endpoints:cfg">${ic('plus')}终端接入</button></div>
       </div>
       <div class="mini-stats">${stats.map(s => `<div class="mini"><span class="mini-ic mi-${s[3]}">${ic(s[2])}</span><div><span>${s[0]}</span><b data-count="${s[1]}">0</b></div></div>`).join('')}</div>
       <div class="toolbar">
@@ -119,15 +112,6 @@
       let t; q('#eq').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { f.q = e.target.value.trim(); render(); }, 160); });
       q('#epGrid').addEventListener('click', e => { const c = e.target.closest('.ep'); if (c) openEndpoint(D.endpoints.find(x => x.id === c.dataset.id), render); });
       q('#epGrid').addEventListener('keydown', e => { if (e.key === 'Enter') { const c = e.target.closest('.ep'); if (c) openEndpoint(D.endpoints.find(x => x.id === c.dataset.id)); } });
-      q('[data-act="upgrade"]').addEventListener('click', async e => {
-        const latest = D.endpoints.map(x => x.agent).sort((a, b2) => a.localeCompare(b2, undefined, { numeric: true })).pop();
-        const n = D.endpoints.filter(x => x.agent !== latest && x.status !== 'offline').length;
-        if (!n) { toast('所有在线终端均已是最新版本', { type: 'info' }); return; }
-        const ok = await confirmDialog({ title: '批量升级 Agent', text: `将向版本落后的 ${n} 台终端下发升级指令（目标为当前已接入终端中的最高版本），终端在下次心跳时执行。`, okText: '开始升级' });
-        if (ok) act(e.target.closest('button'), () => API.post('/endpoints/batch-upgrade'), r => {
-          toast(`已向 ${r.upgraded} 台终端下发升级至 v${esc(r.version)} 的指令`, { type: 'success', title: '升级指令已下发' });
-        });
-      });
       q('[data-act="export"]').addEventListener('click', () => UI.task(() => API.post('/exports', { kind: 'endpoints' })));
       q('[data-act="deploy"]').addEventListener('click', e => act(e.currentTarget, () => API.post('/endpoints/deploy-token'), r => {
         const base = r.server || location.origin;

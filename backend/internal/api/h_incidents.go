@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
 	"fmt"
 	"log/slog"
@@ -112,18 +111,6 @@ func (s *Server) handleIncidentBatch(w http.ResponseWriter, r *http.Request, a *
 	s.audit(a, "事件处置", fmt.Sprintf("批量处置 %d 个事件", len(closed)), true, "")
 	s.Hub.Publish(Event{Name: "incidents.changed", Module: "incidents", Data: map[string]any{"ids": req.IDs}})
 	writeJSON(w, http.StatusOK, map[string]int{"resolved": len(closed)})
-}
-
-// POST /api/v1/incidents/{id}/whitelist —— 将文件指纹加入白名单
-func (s *Server) handleIncidentWhitelist(w http.ResponseWriter, r *http.Request, a *Actor) {
-	i, err := s.St.GetIncident(r.Context(), r.PathValue("id"))
-	if err != nil || i == nil {
-		writeErr(w, http.StatusNotFound, "事件不存在")
-		return
-	}
-	fp := fmt.Sprintf("%x", sha256.Sum256([]byte(i.File+i.Size)))[:16]
-	s.audit(a, "白名单", fmt.Sprintf("添加白名单：%s 文件指纹 %s…（来源事件 %s）", i.File, fp, i.ID), true, "")
-	writeJSON(w, http.StatusOK, map[string]string{"fingerprint": fp})
 }
 
 /* ---------- 事件写入（上报接口与演示模拟器共用） ---------- */

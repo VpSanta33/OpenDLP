@@ -189,18 +189,18 @@ func PolicyTemplates() []store.Policy {
 		chs, dts   []string
 		act, sev   string
 	}{
-		{"身份证号外发拦截", "检测邮件、IM、Web 渠道中包含 10 条以上身份证号的内容并直接阻断外发", []string{"email", "im", "web"}, []string{"idcard"}, "block", "critical"},
-		{"源代码防泄漏", "识别 30+ 种编程语言的源代码特征，阻断上传至代码托管平台、网盘与移动存储", []string{"web", "cloud", "usb"}, []string{"source"}, "block", "critical"},
-		{"财务报表加密外发", "财务类文档外发时强制透明加密，并记录审批人与接收方", []string{"email", "usb"}, []string{"finance"}, "encrypt", "high"},
-		{"客户数据批量导出告警", "单次外发客户记录超过 500 条时触发告警，并通知数据负责人", []string{"usb", "cloud", "email"}, []string{"customer", "phone"}, "audit", "high"},
-		{"USB 存储设备管控", "仅允许白名单内的加密 U 盘写入，其余移动存储设备一律只读", []string{"usb"}, []string{"idcard", "finance", "source", "design"}, "block", "high"},
-		{"云盘上传敏感内容检测", "对个人云盘上传的文件进行内容识别与文档指纹比对", []string{"cloud"}, []string{"contract", "customer", "design"}, "audit", "medium"},
-		{"打印水印与审计", "敏感文档打印时叠加用户身份水印，并留存打印副本备查", []string{"print"}, []string{"contract", "finance"}, "audit", "medium"},
-		{"IM 文件传输检测", "检测微信、QQ 等即时通讯工具中的文件传输与截图粘贴行为", []string{"im"}, []string{"customer", "contract", "phone"}, "audit", "medium"},
-		{"离职员工高风险行为监控", "处于离职流程中的员工，所有外发行为自动提升一个风险等级", []string{"email", "usb", "cloud", "im", "web"}, []string{"customer", "source", "contract"}, "block", "critical"},
-		{"设计图纸外发审批", "设计图纸外发需经部门负责人在线审批后加密放行", []string{"email", "web"}, []string{"design"}, "encrypt", "high"},
-		{"银行卡号识别 (PCI-DSS)", "基于 Luhn 校验算法识别银行卡号，满足 PCI-DSS 合规要求", []string{"email", "web", "im", "print"}, []string{"bankcard"}, "block", "high"},
-		{"个人信息保护 (PIPL)", "个人敏感信息跨境传输检测，满足《个人信息保护法》合规要求", []string{"email", "web", "cloud"}, []string{"idcard", "phone", "bankcard"}, "audit", "low"},
+		{"身份证号外发拦截", "邮件、IM、Web 渠道单次外发包含 10 个及以上有效身份证号时阻断", []string{"email", "im", "web"}, []string{"idcard"}, "block", "critical"},
+		{"源代码防泄漏", "识别源代码特征关键词，经 Web、网盘或 U 盘外发时阻断", []string{"web", "cloud", "usb"}, []string{"source"}, "block", "critical"},
+		{"财务报表加密外发", "财务类内容经邮件或 U 盘外发时要求加密放行（需网关支持加密；终端 Agent 按审计记录）", []string{"email", "usb"}, []string{"finance"}, "encrypt", "high"},
+		{"客户数据批量导出告警", "单次外发命中客户名单或手机号 50 处及以上时生成事件", []string{"usb", "cloud", "email"}, []string{"customer", "phone"}, "audit", "high"},
+		{"USB 存储设备管控", "拷贝到 U 盘的文件含身份证号、财务、源代码或设计图纸内容时隔离", []string{"usb"}, []string{"idcard", "finance", "source", "design"}, "block", "high"},
+		{"云盘上传敏感内容检测", "网盘同步目录中出现合同、客户名单或设计图纸内容时生成事件", []string{"cloud"}, []string{"contract", "customer", "design"}, "audit", "medium"},
+		{"打印内容审计", "打印渠道（由打印审计系统上报）中的合同与财务内容生成事件", []string{"print"}, []string{"contract", "finance"}, "audit", "medium"},
+		{"IM 文件传输检测", "IM 文件目录中出现客户名单、合同或手机号内容时生成事件", []string{"im"}, []string{"customer", "contract", "phone"}, "audit", "medium"},
+		{"高敏感数据外发阻断", "客户名单、源代码与合同内容经任一渠道外发时阻断", []string{"email", "usb", "cloud", "im", "web"}, []string{"customer", "source", "contract"}, "block", "critical"},
+		{"设计图纸加密外发", "设计图纸经邮件或 Web 外发时要求加密放行（需网关支持加密）", []string{"email", "web"}, []string{"design"}, "encrypt", "high"},
+		{"银行卡号外发拦截", "通过 Luhn 校验识别银行卡号，经邮件、Web、IM 或打印外发时阻断", []string{"email", "web", "im", "print"}, []string{"bankcard"}, "block", "high"},
+		{"个人信息外发审计", "身份证号、手机号或银行卡号经邮件、Web 或网盘外发时生成事件", []string{"email", "web", "cloud"}, []string{"idcard", "phone", "bankcard"}, "audit", "low"},
 	}
 	out := make([]store.Policy, len(pols))
 	for i, p := range pols {
@@ -395,10 +395,6 @@ func Demo(ctx context.Context, st *store.Store, nowT time.Time, demoPassword str
 // DefaultSettings 系统设置默认值（键与前端设置页 data-k 一致）。
 func DefaultSettings() map[string]any {
 	return map[string]any{
-		"ocr": true, "edm": true, "fp": true, "ml": false, "sens": 75.0,
-		"mail": true, "wecom": true, "ding": false, "siem": true, "freq": "每 15 分钟",
-		"ret1": "365 天", "ret2": "180 天", "evi": true, "mask": true,
-		"ruleVersion": "2026.11.08", "apvAutoWhitelist": true, "apvDelegate": true,
-		"comp": []any{"《个人信息保护法》PIPL", "《数据安全法》", "等保 2.0", "PCI-DSS", "ISO 27001"},
+		"mail": true, "wecom": true, "ding": false, "siem": true, "freq": "每 15 分钟", "ret1": "365 天",
 	}
 }

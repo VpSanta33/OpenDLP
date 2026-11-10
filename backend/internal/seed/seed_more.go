@@ -82,8 +82,6 @@ var ruleDefs = []ruleDef{
 	{"手机号码", "pii", "regex", map[string]any{"src": `\b1[3-9]\d{9}\b`}, "中国大陆 11 位手机号码，排除更长数字串中的误匹配"},
 	{"电子邮箱地址", "pii", "regex", map[string]any{"src": `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`}, "标准 RFC 5322 邮箱格式"},
 	{"护照号码", "pii", "regex", map[string]any{"src": `\b[EeGg]\d{8}\b`}, "中国因私 / 电子护照号码"},
-	{"员工花名册 (HR)", "pii", "edm", map[string]any{"records": 4862, "cols": []any{"姓名", "工号", "身份证号", "手机"}, "from": "HR 系统 · 每日 02:00 同步"}, "与人力系统员工主数据进行哈希精确比对，命中 3 列及以上即判定"},
-	{"简历识别模型", "pii", "ml", map[string]any{"acc": 96.2, "samples": 18400}, "识别中英文简历文档，含教育经历、工作经历等结构特征"},
 	{"银行卡号", "fin", "regex", map[string]any{"src": `\b(?:62|4\d|5[1-5])\d{14,17}\b`, "check": "luhn"}, "银联 / Visa / MasterCard 卡号，Luhn 算法校验"},
 	{"统一社会信用代码", "fin", "regex", map[string]any{"src": `\b[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}\b`}, "GB 32100 法人和其他组织统一社会信用代码"},
 	{"财务敏感词典", "fin", "keyword", map[string]any{"words": []any{"营业收入", "净利润", "资产负债表", "现金流量表", "预算草案", "审计底稿", "毛利率"}}, "财务报表与预算类文档的高频专有词汇"},
@@ -92,12 +90,8 @@ var ruleDefs = []ruleDef{
 	{"数据库连接串", "cred", "regex", map[string]any{"src": `(?:mysql|postgres(?:ql)?|mongodb|redis|jdbc:[a-z]+)://[^\s，。]+`}, "含账号口令的数据库连接 URI"},
 	{"内网 IP 地址", "cred", "regex", map[string]any{"src": `\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b`}, "RFC 1918 私有网段地址，用于识别网络拓扑外泄"},
 	{"密级标识关键词", "corp", "keyword", map[string]any{"words": []any{"绝密", "机密", "秘密", "内部资料", "未经授权不得外传", "仅限内部使用"}}, "文档页眉页脚中的密级标识"},
-	{"源代码特征", "corp", "keyword", map[string]any{"words": []any{"private static", "import java", "def __init__", "#include", "SECRET_KEY", "package main"}}, "30+ 编程语言的语法特征词"},
-	{"客户主数据 (CRM)", "corp", "edm", map[string]any{"records": 23481, "cols": []any{"客户名称", "联系人", "手机", "合同金额"}, "from": "CRM 生产库 · 每 6 小时同步"}, "与 CRM 客户库进行精确比对，防止客户名单批量外泄"},
-	{"核心产品设计文档", "corp", "idm", map[string]any{"docs": 1286, "sim": 80}, "对研发核心文档生成指纹，识别片段复制、改写与格式转换"},
-	{"战略合同模板", "corp", "idm", map[string]any{"docs": 342, "sim": 70}, "法务合同模板指纹库，识别合同条款外泄"},
-	{"源代码分类模型", "corp", "ml", map[string]any{"acc": 98.4, "samples": 52000}, "深度学习识别源代码文件，支持压缩包内嵌套检测"},
-	{"工程图纸文件类型", "corp", "file", map[string]any{"exts": []any{".dwg", ".dxf", ".step", ".igs", ".fig", ".psd"}}, "基于文件真实类型（魔数）识别，防止改后缀绕过"},
+	{"源代码特征", "corp", "keyword", map[string]any{"words": []any{"private static", "import java", "def __init__", "#include", "SECRET_KEY", "package main"}}, "常见编程语言的语法特征词（区分大小写的子串匹配）"},
+	{"工程图纸文件类型", "corp", "file", map[string]any{"exts": []any{".dwg", ".dxf", ".step", ".igs", ".fig", ".psd"}}, "按文件扩展名识别（改后缀可绕过）"},
 }
 
 func seedRules(d *store.Data, now int64) {
@@ -179,25 +173,13 @@ func seedAdmins(d *store.Data, r *Rand, now int64, pw string) error {
 }
 
 func seedOps(d *store.Data, r *Rand, now int64) {
-	for i, n := range [][3]string{{"dlp-engine-01", "检测引擎", "10.0.2.11"}, {"dlp-engine-02", "检测引擎", "10.0.2.12"}, {"dlp-engine-03", "检测引擎", "10.0.2.13"},
-		{"dlp-gw-01", "网络网关 (ICAP)", "10.0.3.21"}, {"dlp-gw-02", "网络网关 (ICAP)", "10.0.3.22"}, {"dlp-mgmt-01", "管理节点", "10.0.1.10"}} {
-		st := "online"
-		if i == 4 {
-			st = "warning"
-		}
-		d.Nodes = append(d.Nodes, &store.Node{Name: n[0], Role: n[1], IP: n[2], Status: st, CPU: r.Int(18, 72), Mem: r.Int(35, 80), QPS: r.Int(320, 1500), Latency: 60 + r.Int(0, 30), Up: r.Int(3, 120), Version: "3.2.1", LastSeen: now})
-	}
+	// 演示数据不包含检测节点：本项目不提供检测引擎服务器或网关，该区域只显示第三方系统通过 /api/v1/ingest/nodes 上报的心跳
 	// 演示环境：部分集成已配置
 	cfgs := map[string]map[string]string{
-		"ad":    {"服务器地址": "ldaps://dc01.corp.example:636", "Base DN": "DC=corp,DC=example", "绑定账号": "svc_dlp@corp.example"},
-		"sso":   {"IdP 元数据 URL": "https://sso.corp.example/metadata", "Entity ID": "urn:opendlp:console"},
 		"siem":  {"Syslog 地址": "10.0.2.15", "端口": "514", "格式": "CEF"},
-		"mail":  {"服务地址": "mx-gw.corp.example:25"},
-		"proxy": {"服务地址": "icap://dlp-gw-02:1344"},
 		"wecom": {"Webhook 地址": "https://webhook.corp.example/cgi-bin/webhook/send?key=demo"},
 	}
-	info := map[string]string{"ad": "corp.example · 84 用户 · 8 部门", "sso": "IdP: sso.corp.example，强制管理员 MFA", "siem": "10.0.2.15:514 · CEF 格式",
-		"mail": "mx-gw.corp.example · 旁路 + 阻断模式", "proxy": "dlp-gw-02 响应延迟偏高 (p95 820ms)", "wecom": "群机器人「数据安全响应」· 告警推送（演示）"}
+	info := map[string]string{"siem": "10.0.2.15:514 · CEF 格式（演示）", "wecom": "群机器人「数据安全响应」· 告警推送（演示）"}
 	for _, it := range d.Integrations {
 		if c, ok := cfgs[it.Key]; ok {
 			it.Config, it.Info, it.St = c, info[it.Key], "ok"
@@ -207,14 +189,14 @@ func seedOps(d *store.Data, r *Rand, now int64) {
 		}
 	}
 	d.ReportSchedules = []*store.Schedule{
-		{ID: "RS-01", Name: "数据安全合规月报", Tpl: "monthly", Cron: "每月 1 日 08:00", To: []string{"ciso@corp.example", "compliance@corp.example"}, Fmt: "HTML", On: true, Next: now + 22*dayMs},
+		{ID: "RS-01", Name: "数据安全月报", Tpl: "monthly", Cron: "每月 1 日 08:00", To: []string{"ciso@corp.example", "compliance@corp.example"}, Fmt: "HTML", On: true, Next: now + 22*dayMs},
 		{ID: "RS-02", Name: "事件处置周报", Tpl: "weekly", Cron: "每周一 09:00", To: []string{"soc@corp.example"}, Fmt: "HTML", On: true, Next: now + dayMs},
 		{ID: "RS-03", Name: "部门风险排名", Tpl: "dept", Cron: "每月 5 日 10:00", To: []string{"dept-heads@corp.example"}, Fmt: "CSV", On: true, Next: now + 26*dayMs},
-		{ID: "RS-04", Name: "高管安全简报", Tpl: "exec", Cron: "每季度首日 09:00", To: []string{"ceo@corp.example", "cio@corp.example"}, Fmt: "HTML", On: false, Next: now + 53*dayMs},
+		{ID: "RS-04", Name: "管理层简报", Tpl: "exec", Cron: "每季度首日 09:00", To: []string{"ceo@corp.example", "cio@corp.example"}, Fmt: "HTML", On: false, Next: now + 53*dayMs},
 	}
 	d.Seq["schedule"] = 4
-	hist := [][4]string{{"数据安全合规月报（2026 年 10 月）", "monthly", "HTML", "定时任务"}, {"事件处置周报（第 45 周）", "weekly", "HTML", "定时任务"}, {"事件处置周报（第 44 周）", "weekly", "HTML", "定时任务"},
-		{"等保 2.0 数据安全自查报告", "djbh", "HTML", "李华"}, {"10 月部门风险排名", "dept", "CSV", "定时任务"}, {"个人信息保护合规审计报告", "pipl", "HTML", "赵琪"}}
+	hist := [][4]string{{"数据安全月报（2026 年 10 月）", "monthly", "HTML", "定时任务"}, {"事件处置周报（第 45 周）", "weekly", "HTML", "定时任务"}, {"事件处置周报（第 44 周）", "weekly", "HTML", "定时任务"},
+		{"10 月部门风险排名", "dept", "CSV", "定时任务"}}
 	t := now - 2*dayMs
 	for i, h := range hist {
 		d.Reports = append(d.Reports, &store.Report{ID: fmt.Sprintf("RPT-%d", 720-i), Name: h[0], Tpl: h[1], Fmt: h[2], By: h[3], TS: t, From: t - 30*dayMs, To: t, Size: fmt.Sprintf("%d KB", r.Int(40, 380))})
@@ -266,18 +248,11 @@ func demoAudits(d *store.Data, r *Rand, now int64, incidents []*store.Incident) 
 // baseIntegrations 支持的第三方集成清单（初始均未配置）。
 func baseIntegrations() []*store.Integration {
 	return []*store.Integration{
-		{Key: "ad", Name: "Active Directory / LDAP", Cat: "身份源", Icon: "user", St: "off", Info: "未配置"},
-		{Key: "sso", Name: "企业 SSO (SAML 2.0 / OIDC)", Cat: "身份源", Icon: "key", St: "off", Info: "未配置"},
 		{Key: "siem", Name: "SIEM / Syslog", Cat: "安全运营", Icon: "activity", St: "off", Info: "未配置"},
-		{Key: "soar", Name: "SOAR 自动化编排", Cat: "安全运营", Icon: "zap", St: "off", Info: "未配置，可对接剧本自动隔离终端"},
-		{Key: "mail", Name: "邮件网关 (MTA)", Cat: "外发通道", Icon: "mail", St: "off", Info: "未配置"},
-		{Key: "proxy", Name: "Web 代理 (ICAP)", Cat: "外发通道", Icon: "globe", St: "off", Info: "未配置"},
-		{Key: "casb", Name: "CASB 云应用安全", Cat: "外发通道", Icon: "cloud", St: "off", Info: "未配置，可扩展 SaaS 应用数据管控"},
 		{Key: "smtp", Name: "告警邮件 (SMTP)", Cat: "通知协同", Icon: "mail", St: "off", Info: "未配置，用于告警与定时报表邮件"},
 		{Key: "wecom", Name: "企业微信群机器人", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
 		{Key: "ding", Name: "钉钉机器人", Cat: "通知协同", Icon: "message", St: "off", Info: "未配置"},
 		{Key: "ai", Name: "AI 大模型", Cat: "智能分析", Icon: "wand", St: "off", Info: "未配置，支持 DeepSeek、通义千问等 OpenAI 兼容接口及本地部署模型"},
-		{Key: "itsm", Name: "ITSM 工单系统", Cat: "通知协同", Icon: "list", St: "off", Info: "未配置，可将高危事件自动生成工单"},
 	}
 }
 
@@ -305,9 +280,30 @@ var ruleDataType = map[string]string{
 	"工程图纸文件类型":       "design",
 }
 
-// Upgrade 启动时的数据升级（须在写锁内调用）：补齐新增集成项、修复重复终端编号。
+// Upgrade 启动时的数据升级（须在写锁内调用）：补齐新增集成项、移除未实现的集成与规则类型、修复重复终端编号。
 func Upgrade(d *store.Data) {
 	EnsureIntegrations(d)
+	keep := map[string]bool{}
+	for _, b := range baseIntegrations() {
+		keep[b.Key] = true
+	}
+	ints := d.Integrations[:0]
+	for _, it := range d.Integrations {
+		if keep[it.Key] {
+			ints = append(ints, it)
+		}
+	}
+	d.Integrations = ints
+	rules := d.Rules[:0]
+	for _, r := range d.Rules {
+		if !(r.Builtin && (r.Type == "edm" || r.Type == "idm" || r.Type == "ml")) {
+			rules = append(rules, r)
+		}
+	}
+	d.Rules = rules
+	for _, k := range []string{"ocr", "edm", "fp", "ml", "sens", "comp", "evi", "mask", "ret2", "ruleVersion", "apvAutoWhitelist", "apvDelegate"} {
+		delete(d.Settings, k)
+	}
 	store.RepairEndpointIDs(d)
 }
 

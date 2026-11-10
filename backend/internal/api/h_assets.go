@@ -17,21 +17,6 @@ import (
 
 /* ---------- 数据发现 ---------- */
 
-func (s *Server) handleScanStart(w http.ResponseWriter, r *http.Request, a *Actor) {
-	var n int
-	var id string
-	s.St.Write(func(d *store.Data) {
-		n = len(d.Repos)
-		id = fmt.Sprintf("SCAN-%d", store.NextSeq(d, "scan"))
-	})
-	if n == 0 && !s.Cfg.Demo {
-		writeErr(w, http.StatusConflict, "尚未登记任何数据源，请先添加需要扫描的文件服务器、数据库或对象存储")
-		return
-	}
-	s.audit(a, "终端操作", fmt.Sprintf("下发全量敏感数据发现任务 %s（%d 个数据源）", id, n), true, "")
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "repos": n})
-}
-
 // POST /api/v1/discovery/repos {name, type} —— 登记数据源（由扫描节点执行扫描并回传结果）。
 func (s *Server) handleRepoAdd(w http.ResponseWriter, r *http.Request, a *Actor) {
 	var req struct{ Name, Type string }
@@ -57,22 +42,6 @@ func (s *Server) handleRepoAdd(w http.ResponseWriter, r *http.Request, a *Actor)
 	})
 }
 
-func (s *Server) handleRepoRescan(w http.ResponseWriter, r *http.Request, a *Actor) {
-	idx, err := strconv.Atoi(r.PathValue("idx"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "数据源编号无效")
-		return
-	}
-	s.mutate(w, func(d *store.Data) (int, any) {
-		if idx < 0 || idx >= len(d.Repos) {
-			return http.StatusNotFound, fail("数据源不存在")
-		}
-		rp := d.Repos[idx]
-		s.auditIn(d, a, "终端操作", "对数据源「"+rp.Name+"」下发增量扫描任务", true, "")
-		return http.StatusAccepted, rp
-	})
-}
-
 /* ---------- 终端 ---------- */
 
 func (s *Server) handleEndpointAction(w http.ResponseWriter, r *http.Request, a *Actor) {
@@ -91,15 +60,9 @@ func (s *Server) handleEndpointAction(w http.ResponseWriter, r *http.Request, a 
 		if e == nil {
 			return http.StatusNotFound, fail("终端不存在")
 		}
-		labels := map[string]string{"push": "推送策略", "scan": "发起远程扫描", "isolate": "隔离终端", "release": "解除隔离"}
+		labels := map[string]string{"push": "推送策略", "scan": "发起远程扫描"}
 		if labels[req.Action] == "" {
 			return http.StatusBadRequest, fail("不支持的指令")
-		}
-		switch req.Action {
-		case "isolate":
-			e.Isolated = true
-		case "release":
-			e.Isolated = false
 		}
 		c := enqueue(d, e.Host, req.Action, a.Name)
 		n := 0
@@ -110,26 +73,6 @@ func (s *Server) handleEndpointAction(w http.ResponseWriter, r *http.Request, a 
 		}
 		s.auditIn(d, a, "终端操作", fmt.Sprintf("向 %s 下发指令：%s（%s）", e.Host, labels[req.Action], c.ID), true, "")
 		return http.StatusOK, map[string]any{"endpoint": e, "command": c, "policies": n, "offline": e.Status == "offline"}
-	})
-}
-
-func (s *Server) handleEndpointUpgrade(w http.ResponseWriter, r *http.Request, a *Actor) {
-	s.mutate(w, func(d *store.Data) (int, any) {
-		latest := ""
-		for _, e := range d.Endpoints {
-			if versionLess(latest, e.Agent) {
-				latest = e.Agent
-			}
-		}
-		n := 0
-		for _, e := range d.Endpoints {
-			if e.Agent != latest && e.Status != "offline" {
-				enqueue(d, e.Host, "upgrade:"+latest, a.Name)
-				n++
-			}
-		}
-		s.auditIn(d, a, "终端操作", fmt.Sprintf("下发 Agent 升级指令（目标版本 %s，%d 台终端）", latest, n), true, "")
-		return http.StatusOK, map[string]any{"upgraded": n, "version": latest}
 	})
 }
 
@@ -195,7 +138,7 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request, a *Ac
 
 /* ---------- 报表 ---------- */
 
-var reportTpl = map[string]string{"monthly": "数据安全合规月报", "djbh": "等保 2.0 数据安全自查报告", "pipl": "个人信息保护合规审计报告", "weekly": "事件处置周报", "dept": "部门风险排名", "exec": "高管安全简报"}
+var reportTpl = map[string]string{"monthly": "数据安全月报", "weekly": "事件处置周报", "dept": "部门风险排名", "exec": "管理层简报"}
 
 type reportReq struct {
 	Tpl   string `json:"tpl"`
@@ -305,21 +248,15 @@ func (s *Server) buildReport(ctx context.Context, title, scope string, from, to 
 		return out
 	}
 	rd.Channels, rd.Severity, rd.TopUsers, rd.Depts = top(chs, 6), top(sev, 4), top(users, 10), top(depts, 8)
-	ok := func(b bool) string {
-		if b {
-			return "符合"
-		}
-		return "部分符合"
-	}
 	n, bad, err := s.St.VerifyAudit(ctx)
 	if err != nil {
 		return rd, err
 	}
+	yes := func(b bool, y, n string) string { return map[bool]string{true: y, false: n}[b] }
 	rd.Checks = [][3]string{
-		{"敏感数据识别与分类分级", "数据安全法 第 21 条", ok(rd.Detections > 0)},
-		{"数据外发渠道管控（邮件 / USB / 云盘 / IM / Web / 打印）", "GB/T 22239 8.1.4", ok(rd.Detections > 0)},
-		{fmt.Sprintf("审计日志防篡改（哈希链校验 %d 条）", n), "网络安全法 第 21 条", ok(bad == "")},
-		{"管理员三员分立与双因素认证", "GB/T 22239 8.1.4.2", ok(mfaAll)},
+		{"统计周期内有外发检测数据上报", yes(rd.Detections > 0, "是", "否"), "无数据时请检查终端 Agent 与上报令牌"},
+		{fmt.Sprintf("审计日志哈希链校验（%d 条）", n), yes(bad == "", "通过", "异常"), yes(bad == "", "", "链条在 "+bad+" 处断裂")},
+		{"全部管理员已启用双因素认证", yes(mfaAll, "是", "否"), ""},
 	}
 	return rd, nil
 }
@@ -340,7 +277,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid 
 <h2>三、风险等级</h2><table><tr><th>级别</th><th>事件数</th></tr>{{range .Severity}}<tr><td>{{.Name}}</td><td>{{.Value}}</td></tr>{{end}}</table>
 <h2>四、部门分布</h2><table><tr><th>部门</th><th>事件数</th></tr>{{range .Depts}}<tr><td>{{.Name}}</td><td>{{.Value}}</td></tr>{{end}}</table>
 <h2>五、高风险用户 TOP 10</h2><table><tr><th>用户</th><th>事件数</th></tr>{{range .TopUsers}}<tr><td>{{.Name}}</td><td>{{.Value}}</td></tr>{{end}}</table>
-<h2>六、合规项检查</h2><table><tr><th>检查项</th><th>依据</th><th>结果</th></tr>{{range .Checks}}<tr><td>{{index . 0}}</td><td>{{index . 1}}</td><td>{{index . 2}}</td></tr>{{end}}</table>
+<h2>六、平台自检</h2><table><tr><th>检查项</th><th>结果</th><th>说明</th></tr>{{range .Checks}}<tr><td>{{index . 0}}</td><td>{{index . 1}}</td><td>{{index . 2}}</td></tr>{{end}}</table>
 <p class="foot">本报告由 OpenDLP 自动生成，可使用浏览器「打印 → 另存为 PDF」输出。</p></body></html>`))
 
 func renderReport(rd reportData, format string) (string, string, []byte, error) {

@@ -400,8 +400,8 @@ func buildRisk(tot, hi, leaving, usb, polEnabled, polTotal int) Risk {
 	r.Factors = []RiskFactor{
 		{"高危事件占比", hiPct, fmt.Sprintf("%d%%", hiPct), tone(hiPct > 40)},
 		{"离职人员外发", min(100, leaving*5), fmt.Sprintf("%d 起", leaving), tone(leaving > 5)},
-		{"未加密 USB 外发", min(100, usb*2), fmt.Sprintf("%d 次", usb), tone(usb > 30)},
-		{"策略覆盖率", cov, fmt.Sprintf("%d%%", cov), "ok"},
+		{"U 盘外发未阻断", min(100, usb*2), fmt.Sprintf("%d 次", usb), tone(usb > 30)},
+		{"策略启用率", cov, fmt.Sprintf("%d%%", cov), "ok"},
 	}
 	return r
 }

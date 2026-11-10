@@ -134,33 +134,6 @@ func (s *Server) handleApprovalBatch(w http.ResponseWriter, r *http.Request, a *
 	s.Hub.Publish(Event{Name: "approvals.changed", Module: "approvals", Data: map[string]any{"ids": req.IDs}})
 }
 
-func (s *Server) handleApprovalUrge(w http.ResponseWriter, r *http.Request, a *Actor) {
-	id := r.PathValue("id")
-	s.mutate(w, func(d *store.Data) (int, any) {
-		x := findApproval(d, id)
-		if x == nil || x.Status != "pending" || x.Stage != 1 {
-			return http.StatusConflict, fail("该申请当前无需催办")
-		}
-		s.auditIn(d, a, "外发审批", fmt.Sprintf("催办 %s 审批 %s", x.Leader, x.ID), true, "")
-		return http.StatusOK, map[string]string{"leader": x.Leader}
-	})
-}
-
-func (s *Server) handleApprovalFlow(w http.ResponseWriter, r *http.Request, a *Actor) {
-	var req struct {
-		AutoWhitelist bool `json:"autoWhitelist"`
-		Delegate      bool `json:"delegate"`
-	}
-	if !readJSON(w, r, &req) {
-		return
-	}
-	s.mutate(w, func(d *store.Data) (int, any) {
-		d.Settings["apvAutoWhitelist"], d.Settings["apvDelegate"] = req.AutoWhitelist, req.Delegate
-		s.auditIn(d, a, "配置变更", fmt.Sprintf("更新外发审批流程：白名单自动通过=%t，离线自动转交=%t", req.AutoWhitelist, req.Delegate), true, "")
-		return http.StatusOK, map[string]bool{"ok": true}
-	})
-}
-
 /* ---------- 策略 ---------- */
 
 var (
@@ -363,11 +336,10 @@ func (s *Server) handleRuleUpdate(w http.ResponseWriter, r *http.Request, a *Act
 	})
 }
 
-// PATCH /api/v1/rules/{id} {enabled?, sim?}
+// PATCH /api/v1/rules/{id} {enabled}
 func (s *Server) handleRulePatch(w http.ResponseWriter, r *http.Request, a *Actor) {
 	var req struct {
 		Enabled *bool `json:"enabled"`
-		Sim     *int  `json:"sim"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -382,46 +354,8 @@ func (s *Server) handleRulePatch(w http.ResponseWriter, r *http.Request, a *Acto
 			ru.Enabled = *req.Enabled
 			s.auditIn(d, a, "规则变更", fmt.Sprintf("%s识别规则「%s」", map[bool]string{true: "启用", false: "停用"}[ru.Enabled], ru.Name), true, "")
 		}
-		if req.Sim != nil && ru.Type == "idm" {
-			if *req.Sim < 40 || *req.Sim > 100 {
-				return http.StatusBadRequest, fail("相似度阈值须在 40-100 之间")
-			}
-			cfg := map[string]any{}
-			for k, v := range ru.Cfg {
-				cfg[k] = v
-			}
-			cfg["sim"] = *req.Sim
-			ru.Cfg = cfg
-			s.auditIn(d, a, "规则变更", fmt.Sprintf("调整「%s」相似度阈值为 %d%%", ru.Name, *req.Sim), true, "")
-		}
 		ru.Updated = time.Now().UnixMilli()
 		return http.StatusOK, ru
-	})
-}
-
-// POST /api/v1/rules/{id}/sync|train —— EDM 索引同步 / 模型增量训练
-func (s *Server) handleRuleAction(w http.ResponseWriter, r *http.Request, a *Actor) {
-	id, act := r.PathValue("id"), r.PathValue("action")
-	if !s.Cfg.Demo {
-		writeErr(w, http.StatusNotImplemented, "EDM 索引同步与模型训练由检测引擎执行，请在检测节点上配置数据源后进行")
-		return
-	}
-	s.mutate(w, func(d *store.Data) (int, any) {
-		ru := findRule(d, id)
-		if ru == nil {
-			return http.StatusNotFound, fail("规则不存在")
-		}
-		switch {
-		case act == "sync" && ru.Type == "edm":
-			s.auditIn(d, a, "规则变更", fmt.Sprintf("同步 EDM 索引「%s」", ru.Name), true, "")
-			ru.Updated = time.Now().UnixMilli()
-			return http.StatusOK, map[string]any{"records": ru.Cfg["records"]}
-		case act == "train" && ru.Type == "ml":
-			s.auditIn(d, a, "规则变更", fmt.Sprintf("基于误报反馈增量训练模型「%s」", ru.Name), true, "")
-			ru.Updated = time.Now().UnixMilli()
-			return http.StatusOK, map[string]any{"samples": 214}
-		}
-		return http.StatusBadRequest, fail("该规则不支持此操作")
 	})
 }
 

@@ -201,48 +201,11 @@ func (s *Server) handleMFA(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "last": lastAt, "lastIp": lastIP, "pwdChange": pwdChange})
 }
 
-// POST /api/v1/auth/sso、/auth/qr —— 需要对接企业 IdP / 企业微信；开发模式下模拟为 admin 登录。
-func (s *Server) handleFederated(via string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.csrfOK(r) {
-			writeErr(w, http.StatusForbidden, "请求来源校验失败")
-			return
-		}
-		if !s.Cfg.Dev {
-			writeErr(w, http.StatusNotImplemented, via+"尚未配置身份提供商，请在「运维与集成」中完成配置")
-			return
-		}
-		ip := s.clientIP(r)
-		var role, name string
-		var last int64
-		s.St.Write(func(d *store.Data) {
-			a := d.Admin("admin")
-			if a == nil || a.Status != "active" || !ipAllowed(a.Allow, ip) {
-				return
-			}
-			role, name, last = a.Role, a.Name, a.Last
-			a.Last, a.IP = time.Now().UnixMilli(), ip
-			_ = s.St.AppendAudit(context.Background(), store.AuditEntry{Op: a.Acc, Role: d.RoleName(a.Role), Type: "登录", Detail: "登录管理控制台（" + via + "，开发模式模拟）", IP: ip, OK: true})
-		})
-		if role == "" {
-			writeErr(w, http.StatusForbidden, "模拟账号不可用")
-			return
-		}
-		tok, err := s.Sess.Create("admin", role, ip)
-		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "创建会话失败")
-			return
-		}
-		s.setSessionCookie(w, tok, 0)
-		writeJSON(w, http.StatusOK, map[string]any{"name": name, "last": last, "lastIp": ip})
-	}
-}
-
 // GET /api/v1/auth/config —— 登录页所需的公开配置。
 func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 	setup := false
 	s.St.Read(func(d *store.Data) { setup = d.SetupRequired() })
-	writeJSON(w, http.StatusOK, map[string]any{"dev": s.Cfg.Dev, "demo": s.Cfg.Demo, "sso": s.Cfg.Dev, "qr": s.Cfg.Dev, "setup": setup, "version": s.Cfg.Version})
+	writeJSON(w, http.StatusOK, map[string]any{"dev": s.Cfg.Dev, "demo": s.Cfg.Demo, "setup": setup, "version": s.Cfg.Version})
 }
 
 func (s *Server) meJSON(a *Actor) map[string]any {

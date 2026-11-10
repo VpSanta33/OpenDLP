@@ -34,11 +34,9 @@
         <div class="forbid-art">${ic('lock')}<span></span><span></span></div>
         <h1>403 · 无访问权限</h1>
         <p>当前角色「${esc(UI.me.roleName)}」无权访问「${p.title}」。<br>根据三员分立原则，该模块由其他管理员角色负责。</p>
-        <div class="forbid-act"><a class="btn" href="#/dashboard">${ic('dashboard')}返回总览</a><button class="btn btn-primary" id="askPerm">${ic('send')}申请临时授权</button></div>
+        <div class="forbid-act"><a class="btn" href="#/dashboard">${ic('dashboard')}返回总览</a></div>
+        <p class="muted small" style="margin-top:12px">如需访问，请联系超级管理员在「组织与权限」中调整角色权限。</p>
       </div>`;
-    },
-    mount(root) {
-      root.querySelector('#askPerm').addEventListener('click', () => toast('请联系超级管理员在「组织与权限」中为您的角色授予该模块权限', { type: 'info', title: '申请授权' }));
     }
   };
 
@@ -189,7 +187,7 @@
     const opt = (grp, v, cur, label, preview) => `<button class="ap-opt ${v === cur ? 'on' : ''}" data-grp="${grp}" data-v="${v}">${preview}<span>${ic('check')}${label}</span></button>`;
     const html = `
       <div class="dr-head"><div class="dr-meta"><span class="tag b-primary">${ic('palette')}界面偏好</span></div>
-        <h2>外观与显示</h2><p>设置仅对当前浏览器生效，可由系统管理员统一下发默认值</p>
+        <h2>外观与显示</h2><p>设置仅保存在当前浏览器</p>
         <button class="icon-btn dr-close" data-close aria-label="关闭">${ic('x')}</button></div>
       <div class="dr-body ap">
         <h4 class="sec-t">主题模式</h4>
@@ -209,7 +207,7 @@
         <h4 class="sec-t">界面密度</h4>
         ${UI.seg('density', [['comfortable', '舒适'], ['compact', '紧凑']], pref('density'))}
         <h4 class="sec-t">安全</h4>
-        <label class="set-row"><div><b>屏幕安全水印</b><small>在控制台叠加当前账号与 IP，防止截屏、拍照泄露</small></div><span class="switch"><input type="checkbox" id="apWm" ${pref('wm') ? 'checked' : ''}><span></span></span></label>
+        <label class="set-row"><div><b>屏幕安全水印</b><small>在控制台叠加当前账号与 IP，便于追溯截屏、拍照外传</small></div><span class="switch"><input type="checkbox" id="apWm" ${pref('wm') ? 'checked' : ''}><span></span></span></label>
       </div>
       <div class="dr-foot"><button class="btn" id="apReset">${ic('refresh')}恢复默认</button><span class="sp"></span><button class="btn btn-primary" data-close>${ic('check')}完成</button></div>`;
     const { panel } = openLayer('drawer drawer-sm', html);
@@ -247,7 +245,7 @@
           ${t.status === 'run' ? `<div class="progress"><i style="width:${t.progress}%"></i></div><small>正在生成… ${t.progress}%</small>`
             : t.status === 'failed' ? `<small class="danger-t">失败：${esc(t.error || '')}</small>` : `<small>${t.size || '已完成'} · ${relTime(t.done || t.created)}</small>`}</div>
         ${t.download ? `<button class="icon-btn sm" data-dl="${t.id}" aria-label="下载">${ic('download')}</button>` : ''}</li>`).join('') : `<li class="cmdk-empty">${ic('inbox')}<p>暂无下载任务</p></li>`}</ul>
-      <div class="pop-f muted small">文件保留 7 天 · 下载行为将记录到审计日志</div>`;
+      <div class="pop-f muted small">生成的文件保存在服务端内存中 7 天（重启后清空）· 下载记入审计日志</div>`;
   }
   function upsertTask(j) {
     const i = tasks.findIndex(t => t.id === j.id);
@@ -310,7 +308,6 @@
       <div class="pm-div"></div>` : ''}
       <button class="pm-item" data-u="pwd">${ic('key')}修改口令</button>
       <button class="pm-item" data-u="appear">${ic('palette')}界面偏好</button>
-      <button class="pm-item" data-u="doc">${ic('book')}操作手册</button>
       <div class="pm-div"></div>
       <button class="pm-item danger" data-u="logout">${ic('logout')}退出登录</button>`;
   }
@@ -399,17 +396,7 @@
   function runSel() { const it = items[sel]; if (!it) return; closeCmdk(); it.run(); }
 
   /* ---------- 登录 ---------- */
-  function qrSvg() {
-    const n = 25, cell = 6; let r = '';
-    const finder = (x, y) => (x < 8 && y < 8) || (x >= n - 8 && y < 8) || (x < 8 && y >= n - 8);
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      if (finder(x, y) || (Math.abs(x - 12) < 3 && Math.abs(y - 12) < 3)) continue;
-      if (Math.random() < 0.46) r += `<rect x="${x * cell}" y="${y * cell}" width="${cell}" height="${cell}"/>`;
-    }
-    const f = (x, y) => `<rect x="${x * cell + 3}" y="${y * cell + 3}" width="${cell * 7 - 6}" height="${cell * 7 - 6}" fill="none" stroke="currentColor" stroke-width="6"/><rect x="${(x + 2) * cell}" y="${(y + 2) * cell}" width="${cell * 3}" height="${cell * 3}"/>`;
-    return `<svg viewBox="0 0 ${n * cell} ${n * cell}" fill="currentColor">${r}${f(0, 0)}${f(n - 7, 0)}${f(0, n - 7)}</svg>`;
-  }
-  let authCfg = { dev: false, sso: false, qr: false };
+  let authCfg = { dev: false };
   function showLogin(reason) {
     if ($('#login')) return;
     UI.me = null;
@@ -425,15 +412,14 @@
         </div>
         <div class="lg-copy">
           <div class="lg-brand"><span class="brand-logo">${ic('shield-check')}</span>OpenDLP</div>
-          <h1>让每一份敏感数据<br>都在掌控之中</h1>
-          <p>覆盖终端、网络、邮件、云端的一体化数据防泄漏平台，助力企业满足《数据安全法》《个人信息保护法》与等保 2.0 合规要求。</p>
-          <ul><li>${ic('check')}全渠道外发管控与内容识别</li><li>${ic('check')}UEBA 用户行为风险分析</li><li>${ic('check')}三员分立与完整审计追溯</li></ul>
+          <h1>数据防泄漏<br>管理控制台</h1>
+          <p>终端 Agent 检测 U 盘与同步目录中的敏感文件，网关等系统可通过接口上报；在这里统一配置策略、处置事件、审批外发并留存审计记录。</p>
+          <ul><li>${ic('check')}内容识别与策略处置</li><li>${ic('check')}事件告警与用户风险评分</li><li>${ic('check')}三员分立权限与审计追溯</li></ul>
           <div class="lg-cert"><span>TOTP 双因素认证</span><span>审计日志哈希链</span><span>三员分立权限模型</span></div>
         </div>
       </section>
       <section class="lg-panel"><div class="lg-box">
         <div class="lg-head"><h2>登录管理控制台</h2><p>${reason ? esc(reason) : '欢迎使用 OpenDLP 企业数据防泄漏平台'}</p></div>
-        ${UI.seg('lgm', [['pwd', '账号登录'], ['sso', '企业 SSO'], ['qr', '扫码登录']], 'pwd')}
         <div class="lg-pane on" data-p="pwd">
           <form id="lgForm" novalidate>
             <div class="field"><label class="lbl" for="lgAcc">管理员账号</label><div class="in-ic">${ic('user')}<input class="input" id="lgAcc" value="${esc(last)}" autocomplete="username"></div></div>
@@ -448,25 +434,14 @@
           <button class="link back" id="otpBack">${ic('chevron-left')}返回</button>
           <div class="otp-ic">${ic('phone')}</div>
           <h3>双因素身份验证</h3>
-          <p class="muted small">请输入身份验证器（如企业微信 / Google Authenticator）中的 6 位动态码<br><span id="otpWho"></span></p>
+          <p class="muted small">请输入身份验证器（如 Google Authenticator、Microsoft Authenticator）中的 6 位动态码<br><span id="otpWho"></span></p>
           <div class="otp" id="otp">${'<input inputmode="numeric" autocomplete="one-time-code" aria-label="验证码">'.repeat(6)}</div>
           <div class="field-err" id="otpErr" style="text-align:center"></div>
           <p class="muted small otp-hint" id="otpHint" hidden>开发模式：动态码已打印在服务端日志中</p>
         </div>
-        <div class="lg-pane" data-p="sso">
-          <div class="field"><label class="lbl" for="ssoDom">企业域名</label><div class="in-ic">${ic('globe')}<input class="input" id="ssoDom" value="corp.example"></div><div class="field-err" id="ssoErr"></div></div>
-          <button class="btn btn-primary btn-lg" id="ssoGo">${ic('key')}跳转至企业身份提供商</button>
-          <div class="sso-list"><span>${ic('shield-check')}SAML 2.0</span><span>${ic('shield-check')}OIDC</span><span>${ic('shield-check')}CAS</span><span>${ic('shield-check')}LDAP</span></div>
-        </div>
-        <div class="lg-pane" data-p="qr">
-          <div class="qr"><div class="qr-box">${qrSvg()}<i class="qr-scan"></i><span class="qr-logo">${ic('shield-check')}</span></div><div class="qr-ok">${ic('check')}<b>扫码成功</b><small>请在手机上确认登录</small></div></div>
-          <p class="muted small" style="text-align:center">请使用 <b>企业微信 / 钉钉</b> 扫描二维码登录<br>二维码 <b id="qrT">120</b> 秒后过期</p>
-          <div class="field-err" id="qrErr" style="text-align:center"></div>
-          <button class="btn btn-sm" id="qrSim" style="margin:12px auto 0;display:flex" hidden>${ic('check')}模拟扫码确认（开发模式）</button>
-        </div>
         <div class="lg-foot">${ic('lock')}${location.protocol === 'https:' ? '已通过 HTTPS 加密传输' : '当前未使用 HTTPS，请勿在公网环境使用'} · 登录行为将记录至审计日志</div>
       </div>
-      <div class="lg-copy-r">© 2026 OpenDLP · v3.2.1</div></section>`;
+      <div class="lg-copy-r" id="lgVer">OpenDLP</div></section>`;
     document.body.appendChild(el);
     app.classList.add('locked');
     requestAnimationFrame(() => el.classList.add('show'));
@@ -475,13 +450,10 @@
     let challenge = null;
     API.get('/auth/config').then(c => {
       authCfg = c;
-      q('#lgDemo').hidden = !c.demo; q('#otpHint').hidden = !c.dev; q('#qrSim').hidden = !c.qr;
-      if (!c.sso) q('#ssoGo').insertAdjacentHTML('beforebegin', '<p class="muted small" style="margin:-6px 0 12px">尚未对接企业身份提供商，请先使用账号口令登录，并在「运维与集成」中配置 SSO。</p>');
+      q('#lgDemo').hidden = !c.demo; q('#otpHint').hidden = !c.dev;
+      if (c.version) q('#lgVer').textContent = 'OpenDLP · v' + c.version;
     }).catch(() => {});
     const showPane = p => { $$('.lg-pane', el).forEach(x => x.classList.toggle('on', x.dataset.p === p)); };
-    UI.initSeg(el, 'lgm', v => { showPane(v); q('#lgErr').classList.remove('show'); });
-    let qrLeft = 120;
-    const qrTimer = setInterval(() => { qrLeft = qrLeft > 0 ? qrLeft - 1 : 120; const t = q('#qrT'); if (t) t.textContent = qrLeft; }, 1000);
 
     const shake = () => { const box = q('.lg-box'); box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake'); };
     const err = (m, input, id) => {
@@ -491,7 +463,7 @@
     $$('#lgAcc, #lgPwd', el).forEach(i => i.addEventListener('input', () => { i.classList.remove('err'); q('#lgErr').classList.remove('show'); }));
     q('#lgEye').addEventListener('click', () => { const p = q('#lgPwd'); p.type = p.type === 'password' ? 'text' : 'password'; q('#lgEye').innerHTML = ic(p.type === 'password' ? 'eye' : 'lock'); });
     q('#lgDemo').addEventListener('click', e => { const b = e.target.closest('[data-acc]'); if (!b) return; q('#lgAcc').value = b.dataset.acc; q('#lgAcc').classList.remove('err'); q('#lgErr').classList.remove('show'); q('#lgPwd').focus(); });
-    q('#lgForgot').addEventListener('click', () => toast('请联系系统管理员重置口令，或通过企业 SSO 登录', { type: 'info', title: '忘记口令' }));
+    q('#lgForgot').addEventListener('click', () => toast('请联系系统管理员在「组织与权限 → 管理员账号」中重置口令', { type: 'info', title: '忘记口令' }));
     q('#lgForm').addEventListener('submit', async e => {
       e.preventDefault();
       const acc = q('#lgAcc').value.trim(), pwd = q('#lgPwd').value;
@@ -505,7 +477,6 @@
         if (!r.mfa) return finish(r, r.warn);
         challenge = r.challenge;
         q('#otpWho').textContent = `账号：${r.account}（${r.name}）`;
-        q('.seg[data-seg="lgm"]').style.display = 'none';
         showPane('otp');
         setTimeout(() => q('#otp input').focus(), 260);
       } catch (ex) { err(ex.message, ex.status === 401 ? q('#lgPwd') : null); }
@@ -513,7 +484,7 @@
     });
     const otps = $$('#otp input', el);
     const resetOtp = () => { q('#otp').classList.remove('verifying', 'ok'); otps.forEach(i => { i.disabled = false; i.value = ''; }); otps[0].focus(); };
-    const backToPwd = () => { q('.seg[data-seg="lgm"]').style.display = ''; showPane('pwd'); otps.forEach(i => { i.value = ''; }); challenge = null; };
+    const backToPwd = () => { showPane('pwd'); otps.forEach(i => { i.value = ''; }); challenge = null; };
     q('#otpBack').addEventListener('click', backToPwd);
     const otpCheck = async () => {
       const v = otps.map(i => i.value).join('');
@@ -549,18 +520,7 @@
         (otps[t.length] || otps[5]).focus(); otpCheck();
       });
     });
-    q('#ssoGo').addEventListener('click', e => {
-      if (!q('#ssoDom').value.trim()) { q('#ssoDom').classList.add('err'); return; }
-      act(null, () => API.post('/auth/sso', {}, { quiet401: true }).then(r => finish(r, null, 'SSO')).catch(ex => err(ex.message, null, '#ssoErr')));
-    });
-    q('#qrSim').addEventListener('click', e => {
-      q('.qr').classList.add('scanned');
-      API.post('/auth/qr', {}, { quiet401: true }).then(r => setTimeout(() => finish(r, null, '企业微信扫码'), 600))
-        .catch(ex => { q('.qr').classList.remove('scanned'); err(ex.message, null, '#qrErr'); });
-    });
-
     async function finish(r, warn, via) {
-      clearInterval(qrTimer);
       let entered;
       try { entered = await enter(); } catch (ex) { err(ex.message); return; }
       el.classList.add('out');
@@ -658,7 +618,7 @@
           <div class="field"><label class="lbl" for="suPwd2">确认口令</label><div class="in-ic">${ic('lock')}<input class="input" id="suPwd2" type="password" autocomplete="new-password"></div><div class="field-err" id="suErr"></div></div>
           <button class="btn btn-primary btn-lg" type="submit" id="suNext">下一步：绑定双因素认证</button></form></div>
         <div class="lg-pane" data-p="s2">
-          <p class="muted small">在身份验证器 App（企业微信、Google Authenticator、Microsoft Authenticator 等）中手动添加以下密钥，或导入 otpauth 地址：</p>
+          <p class="muted small">在身份验证器 App（Google Authenticator、Microsoft Authenticator 等）中手动添加以下密钥，或导入 otpauth 地址：</p>
           <div class="field" style="margin-top:12px"><label class="lbl">密钥</label><div class="secret-box" id="suSecret"></div></div>
           <div class="field"><label class="lbl">otpauth 地址</label><div class="secret-box small" id="suUri"></div></div>
           <label class="lbl" style="justify-content:center;margin-top:14px">输入验证器中显示的 6 位动态码</label>
@@ -718,7 +678,7 @@
     const pill = $('.env-pill'); pill.lastChild.textContent = env[0]; pill.style.color = env[1]; pill.style.background = env[2];
     const t = $('.engine-text');
     t.querySelector('b').textContent = sys.nodes ? `检测集群 ${sys.nodesOnline} / ${sys.nodes} 节点在线` : '检测节点未接入';
-    t.querySelector('small').textContent = `v${sys.version} · 规则库 ${sys.ruleVersion || '-'}`;
+    t.querySelector('small').textContent = `v${sys.version}`;
     $('.pulse-dot').style.background = sys.nodes && sys.nodesOnline === sys.nodes ? '' : 'var(--warning)';
   }
 
@@ -825,7 +785,6 @@
       if (u === 'appear') return openAppearance();
       if (u === 'pwd') return openPwdChange();
       if (u === 'logout') return logout();
-      toast('OpenDLP 管理员手册 v3.2 · 共 12 章，部署与接口说明见 README', { type: 'info', title: '操作手册' });
     });
     document.addEventListener('click', closePops);
 

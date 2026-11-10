@@ -169,9 +169,14 @@ func (al *Alerts) dispatch(it alertIntent) {
 		al.fanout(false, it.msg)
 	case toIncident:
 		al.fanout(false, it.msg)
-		freq := ""
-		al.s.St.Read(func(d *store.Data) { freq, _ = d.Settings["freq"].(string) })
-		if s := it.msg.Severity; s == "critical" || s == "high" || freq == "实时" {
+		freq, watched := "", false
+		al.s.St.Read(func(d *store.Data) {
+			freq, _ = d.Settings["freq"].(string)
+			for _, u := range d.Watchlist {
+				watched = watched || u == it.msg.CEF["suser"]
+			}
+		})
+		if s := it.msg.Severity; s == "critical" || s == "high" || freq == "实时" || watched {
 			al.fanout(true, it.msg)
 		} else if len(al.digest) < 500 {
 			al.digest = append(al.digest, it.msg)

@@ -4,7 +4,7 @@
   const { D, ic, $$, fmt, esc, relTime, countUp, toast, card, openLayer, act, seg, initSeg } = UI;
 
   const CAT = { pii: ['个人信息', 'b-primary', 'c1'], fin: ['金融数据', 'b-warning', 'c3'], cred: ['凭证密钥', 'b-danger', 'c5'], corp: ['企业机密', 'b-purple', 'c4'] };
-  const TYPE = { regex: ['正则表达式', 'code'], keyword: ['关键词词典', 'hash'], edm: ['精确数据匹配 EDM', 'database'], idm: ['文档指纹 IDM', 'fingerprint'], ml: ['机器学习', 'cpu'], file: ['文件类型', 'file'] };
+  const TYPE = { regex: ['正则表达式', 'code'], keyword: ['关键词词典', 'hash'], file: ['文件类型', 'file'] };
 
   /* 校验算法 */
   const ID_W = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2], ID_C = '10X98765432';
@@ -58,20 +58,11 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
     const c = r.cfg;
     switch (r.type) {
       case 'regex': return `<div class="code-blk"><span class="muted">/</span>${esc(c.src)}<span class="muted">/g</span><button class="icon-btn sm" data-copy title="复制">${ic('copy')}</button></div>
-        <div class="rule-meta">${c.check ? `<span class="tag b-success">${ic('shield-check')}${CHECK[c.check][1]}</span>` : ''}<span class="tag">${ic('activity')}最小命中数 1</span><span class="tag">${ic('layers')}上下文窗口 ±50 字符</span></div>`;
+        <div class="rule-meta">${c.check ? `<span class="tag b-success">${ic('shield-check')}${CHECK[c.check][1]}</span>` : ''}<span class="tag">RE2 语法（线性时间，无回溯）</span></div>`;
       case 'keyword': return `<div class="chips">${c.words.map(w => `<span class="chip on">${ic('check')}${esc(w)}</span>`).join('')}</div>
-        <div class="rule-meta"><span class="tag">匹配方式：全词匹配，忽略大小写</span><span class="tag">邻近度：同段落内命中 ≥ 2 个提升置信度</span></div>`;
-      case 'edm': return `<div class="mstat"><div><span>索引记录</span><b>${fmt(c.records)}</b></div><div><span>匹配列</span><b>${c.cols.length}</b></div><div><span>存储方式</span><b>SHA-256 加盐哈希</b></div></div>
-        <div class="chips" style="margin-top:12px">${c.cols.map(x => `<span class="chip on">${ic('check')}${x}</span>`).join('')}</div>
-        <div class="rule-meta">${c.from ? `<span class="tag">${ic('refresh')}${esc(c.from)}</span>` : ''}<button class="btn btn-sm" data-sync>${ic('refresh')}立即同步</button></div>`;
-      case 'idm': return `<div class="mstat"><div><span>指纹文档</span><b>${fmt(c.docs)}</b></div><div><span>相似度阈值</span><b id="simV">${c.sim}%</b></div><div><span>识别能力</span><b>片段 / 改写 / 转格式</b></div></div>
-        <input type="range" class="range" min="40" max="100" value="${c.sim}" id="sim" style="margin-top:14px" aria-label="相似度阈值">
-        <div class="rule-meta"><button class="btn btn-sm" data-up>${ic('upload')}上传样本文档</button><span class="muted small">支持 Office / PDF / 源代码 / CAD，单次最多 500 个</span></div>`;
-      case 'ml': return `<div class="mstat"><div><span>模型准确率</span><b>${c.acc}%</b></div><div><span>训练样本</span><b>${fmt(c.samples)}</b></div><div><span>模型版本</span><b>v2026.10</b></div></div>
-        <div class="acc"><span>准确率</span><div class="meter"><i class="ok" style="--w:${c.acc}%"></i></div><span>召回率</span><div class="meter"><i style="--w:${(c.acc - 3.1).toFixed(1)}%"></i></div></div>
-        <div class="rule-meta"><button class="btn btn-sm" data-train>${ic('refresh')}使用误报样本再训练</button></div>`;
+        <div class="rule-meta"><span class="tag">匹配方式：子串匹配，区分大小写</span></div>`;
       default: return `<div class="chips">${c.exts.map(x => `<span class="chip on">${ic('check')}${x}</span>`).join('')}</div>
-        <div class="rule-meta"><span class="tag">${ic('shield-check')}基于文件头魔数识别，防止修改扩展名绕过</span></div>`;
+        <div class="rule-meta"><span class="tag">按文件扩展名识别，修改扩展名可绕过</span></div>`;
     }
   }
 
@@ -81,7 +72,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
       const en = D.rules.filter(r => r.enabled).length, hits = D.rules.reduce((s, r) => s + r.hits, 0);
       return `
       <div class="page-head">
-        <div><h1>识别规则库</h1><p>管理敏感数据标识符：正则、关键词词典、精确数据匹配、文档指纹、机器学习与文件类型</p></div>
+        <div><h1>识别规则库</h1><p>管理敏感数据识别规则（正则表达式、关键词、文件扩展名），并在沙箱中实时测试</p></div>
         <div class="head-actions"><button class="btn btn-primary" id="newRule" data-perm="rules:cfg">${ic('plus')}新建规则</button></div>
       </div>
       <div class="mini-stats">
@@ -129,12 +120,9 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
           <h3 class="rl-title">${esc(r.name)}</h3><p>${esc(r.desc)}</p></div>
           <div class="card-x"><button class="btn btn-sm" data-dup>${ic('copy')}复制为自定义</button>${r.builtin ? '' : `<button class="btn btn-sm" data-edit>${ic('edit')}编辑</button>`}</div></header>
           <div class="card-b rl-body">${cfgHtml(r)}
-            <div class="rl-kpis"><div><span>近 30 天命中</span><b>${fmt(r.hits)}</b></div><div><span>误报率</span><b class="${r.fp > 2 ? 'warn-c' : ''}">${r.hits ? r.fp + '%' : '-'}</b></div><div><span>来源</span><b>${r.builtin ? '内置' : '自定义'}</b></div><div><span>最近更新</span><b>${relTime(r.updated)}</b></div></div>
+            <div class="rl-kpis"><div><span>近 30 天命中</span><b>${fmt(r.hits)}</b></div><div><span>来源</span><b>${r.builtin ? '内置' : '自定义'}</b></div><div><span>最近更新</span><b>${relTime(r.updated)}</b></div></div>
           </div>`;
         box.classList.remove('swap'); void box.offsetWidth; box.classList.add('swap');
-        const sim = box.querySelector('#sim');
-        sim && sim.addEventListener('input', e => { box.querySelector('#simV').textContent = e.target.value + '%'; });
-        sim && sim.addEventListener('change', e => API.patch('/rules/' + encodeURIComponent(r.id), { sim: +e.target.value }).then(upd => { Object.assign(r, upd); toast(`相似度阈值已调整为 ${upd.cfg.sim}%`, { type: 'success' }); }).catch(UI.apiError));
       }
       let testSeq = 0;
       async function runTest() {
@@ -151,7 +139,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
         q('#mcnt').textContent = `命中 ${valid} 处${ms.length - valid ? `，${ms.length - valid} 处未通过校验已忽略` : ''}`;
         const one = byId[cur];
         q('#mrows').innerHTML = ms.length ? ms.map((m, i) => `<tr class="${m.ok ? '' : 'dim'}" style="--i:${i}"><td class="muted">${i + 1}</td><td><b class="rn">${esc(m.r.name)}</b></td><td><span class="tag ${CAT[m.r.cat][1]}">${CAT[m.r.cat][0]}</span></td><td class="mono">${esc(mask(m.v))}</td><td class="muted mono">${m.s}–${m.e}</td><td>${m.r.cfg.check ? (m.ok ? `<span class="ok-t">${ic('check')}通过</span>` : `<span class="danger-t">${ic('x')}未通过</span>`) : '<span class="muted">—</span>'}</td></tr>`).join('')
-          : `<tr><td colspan="6"><div class="empty-st" style="padding:24px 0">${ic('shield-check')}<p>${scope === 'one' && one && !['regex', 'keyword'].includes(one.type) ? `「${TYPE[one.type][0]}」类规则需在检测引擎中基于索引运行，沙箱仅支持正则与关键词` : '未识别到敏感内容'}</p></div></td></tr>`;
+          : `<tr><td colspan="6"><div class="empty-st" style="padding:24px 0">${ic('shield-check')}<p>${scope === 'one' && one && !['regex', 'keyword'].includes(one.type) ? '文件类型规则按文件名判断，沙箱只测试文本内容' : '未识别到敏感内容'}</p></div></td></tr>`;
       }
 
       initSeg(root, 'cat', v => { cat = v; renderList(); });
@@ -165,7 +153,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
             const sw = e.target, want = sw.checked;
             API.patch('/rules/' + encodeURIComponent(r.id), { enabled: want }).then(upd => {
               Object.assign(r, upd); li.classList.toggle('off', !r.enabled);
-              toast(`规则「${esc(r.name)}」已${r.enabled ? '启用' : '停用'}，将在 1 分钟内下发至所有检测节点`, { type: r.enabled ? 'success' : 'warning' });
+              toast(`规则「${esc(r.name)}」已${r.enabled ? '启用' : '停用'}，终端 Agent 将在下次心跳时同步`, { type: r.enabled ? 'success' : 'warning' });
               runTest();
             }).catch(err => { sw.checked = !want; UI.apiError(err); });
           }
@@ -178,9 +166,6 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
       q('#detail').addEventListener('click', e => {
         const r = D.rules.find(x => x.id === cur);
         if (e.target.closest('[data-copy]')) { navigator.clipboard && navigator.clipboard.writeText(r.cfg.src).catch(() => {}); toast('正则表达式已复制到剪贴板', { type: 'success' }); }
-        else if (e.target.closest('[data-sync]')) act(e.target.closest('[data-sync]'), () => API.post(`/rules/${encodeURIComponent(r.id)}/sync`), x => toast(`已从数据源同步 ${fmt(x.records)} 条记录，索引已更新`, { type: 'success', title: 'EDM 同步完成' }));
-        else if (e.target.closest('[data-up]')) toast('样本文档上传需通过检测节点的指纹采集工具完成', { type: 'info' });
-        else if (e.target.closest('[data-train]')) act(e.target.closest('[data-train]'), () => API.post(`/rules/${encodeURIComponent(r.id)}/train`), x => toast(`已基于 ${x.samples} 条误报反馈完成增量训练`, { type: 'success', title: '训练完成' }));
         else if (e.target.closest('[data-dup]')) openEditor({ ...r, name: r.name + '（副本）' });
         else if (e.target.closest('[data-edit]')) openEditor(r, true);
       });
@@ -192,7 +177,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
         const r = src || { name: '', cat: 'pii', type: 'regex', cfg: { src: '' }, desc: '' };
         const isRe = r.type === 'regex';
         const { panel, close } = openLayer('modal', `
-          <div class="md-head"><div><h2>${editing ? '编辑规则' : '新建识别规则'}</h2><p>自定义规则保存后将自动下发至全部检测节点</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
+          <div class="md-head"><div><h2>${editing ? '编辑规则' : '新建识别规则'}</h2><p>保存后终端 Agent 在下次心跳时同步</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
           <div class="md-body">
             <div class="field"><label class="lbl">规则名称 <em>*</em></label><input class="input" id="eName" value="${esc(r.name)}" placeholder="例如：员工工号"><div class="field-err" id="eNameErr">请输入规则名称</div></div>
             <div class="grid g2" style="margin-bottom:0">
@@ -233,7 +218,7 @@ AWS Key: AKIAIOSFODNN7EXAMPLE
             if (editing) Object.assign(src, saved); else D.rules.unshift(saved);
             cur = saved.id;
             close(); renderList(); renderDetail(); runTest();
-            toast(`规则「${esc(saved.name)}」已保存并下发至检测节点`, { type: 'success', title: '保存成功' });
+            toast(`规则「${esc(saved.name)}」已保存`, { type: 'success', title: '保存成功' });
           }).then(r2 => { if (r2 === undefined) { g('#ePat').classList.add('err'); } });
         });
       }

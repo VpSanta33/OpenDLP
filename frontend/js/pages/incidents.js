@@ -10,17 +10,13 @@
     if (!i) { try { i = await API.get('/incidents/' + encodeURIComponent(id)); } catch (e) { UI.apiError(e); return; } }
     if (!i) { toast('事件不存在或已被归档', { type: 'warning' }); return; }
     const dt = D.dtMap[i.dataType], ch = D.chMap[i.channel];
-    const score = Math.min(99, { critical: 90, high: 74, medium: 52, low: 30 }[i.severity] + (i.matches % 9));
     const closedSt = i.status === 'resolved' || i.status === 'fp';
     const tl = [
-      ['检测到外发行为', `${i.host} 上的${ch.name}进程尝试传输文件至「${i.dest}」`, i.ts, 'done'],
-      ['内容深度识别', `识别到${dt.name} ${i.matches} 处，置信度 ${90 + (i.matches % 10)}%`, i.ts + 1200, 'done'],
-      ['命中策略', `「${i.policy}」 · ${i.policyId}`, i.ts + 1500, 'done'],
-      ['执行响应动作', ACT[i.action].name + (i.action === 'block' ? '，已向用户弹窗提示违规原因' : '，已留存完整证据'), i.ts + 1800, 'done'],
-      ['安全团队研判', i.status === 'resolved' ? '已确认处置并归档' : i.status === 'fp' ? '已标记为误报，规则将自动优化' : i.status === 'processing' ? '安全分析师 李华 正在研判' : '等待安全分析师研判', closedSt ? i.ts + 42 * 60e3 : null, closedSt ? 'done' : 'current']
+      ['检测到外发', `${i.host} 通过${ch.name}外发至「${i.dest}」，识别到${dt.name} ${i.matches} 处`, i.ts, 'done'],
+      ['策略处置', `命中「${i.policy || '未命中策略'}」${i.policyId ? '（' + i.policyId + '）' : ''}，${ACT[i.action] ? ACT[i.action].name : i.action}`, i.ts, 'done'],
+      closedSt ? [i.status === 'fp' ? '标记为误报' : '已处置', i.handler ? `处置人：${i.handler}` : '', i.closed || null, 'done'] : ['等待处置', '可在下方确认处置或标记误报', null, 'current']
     ];
-    const kv = [['用户', i.user], ['部门', i.dept], ['终端', i.host], ['IP 地址', i.ip], ['外发通道', ch.name], ['目的地', i.dest], ['文件大小', i.size], ['检测时间', fmtTime(i.ts)]];
-    const n1 = i.matches % 40 + 1;
+    const kv = [['用户', i.user], ['部门', i.dept || '-'], ['终端', i.host], ['IP 地址', i.ip || '-'], ['外发通道', ch.name], ['目的地', i.dest], ['数据类型', dt.name], ['命中数', String(i.matches)], ['文件大小', i.size || '-'], ['检测时间', fmtTime(i.ts)]];
     const html = `
       <div class="dr-head">
         <div class="dr-meta">${sevBadge(i.severity)}<span class="mono muted">${i.id}</span>${stBadge(i.status)}</div>
@@ -28,24 +24,14 @@
         <button class="icon-btn dr-close" data-close aria-label="关闭">${ic('x')}</button>
       </div>
       <div class="dr-body">
-        <div class="callout c-${i.severity}">${ic('shield')}<div>该事件由策略 <b>「${esc(i.policy)}」</b> 触发，系统已执行 <b>${ACT[i.action].name}</b>。${i.severity === 'critical' ? '严重事件，建议优先处置。' : ''}</div></div>
+        <div class="callout c-${i.severity}">${ic('shield')}<div>${i.policy ? `该事件由策略 <b>「${esc(i.policy)}」</b> 触发，` : ''}处置动作：<b>${ACT[i.action] ? ACT[i.action].name : esc(i.action)}</b>。${i.severity === 'critical' ? '严重事件，建议优先处置。' : ''}</div></div>
         <h4 class="sec-t">AI 研判</h4>
         <div class="ai-box" id="aiBox"></div>
         <div class="kv">${kv.map(([k, v]) => `<div><span>${k}</span><b title="${esc(v)}">${esc(v)}</b></div>`).join('')}</div>
-        <h4 class="sec-t">命中内容预览 <small>已脱敏</small></h4>
-        <div class="snippet">
-          <div><span class="ln">12</span>// ${esc(i.file)} · 第 3 页 · 识别类型：${dt.name}</div>
-          <div><span class="ln">13</span>记录 ${n1}：<mark>${esc(dt.sample)}</mark></div>
-          <div><span class="ln">14</span>记录 ${n1 + 1}：<mark>${esc(dt.sample)}</mark></div>
-          <div><span class="ln">15</span>… 另有 ${Math.max(0, i.matches - 2)} 处命中已折叠</div>
-        </div>
-        <h4 class="sec-t">风险评分</h4>
-        <div class="score"><div class="meter"><i class="${score >= 80 ? 'hot' : score >= 55 ? 'warm' : ''}" style="--w:${score}%;--d:.35s"></i></div><b>${score}</b></div>
-        <h4 class="sec-t">处置时间线</h4>
+        <h4 class="sec-t">处置记录</h4>
         <ol class="timeline">${tl.map((t, k) => `<li class="${t[3]}" style="--i:${k}"><i></i><div><b>${t[0]}</b><p>${esc(t[1])}</p>${t[2] ? `<time>${fmtTime(t[2])}</time>` : ''}</div></li>`).join('')}</ol>
       </div>
       <div class="dr-foot">
-        <button class="btn" data-a="wl" data-perm="incidents:op">${ic('shield')}加入白名单</button>
         <button class="btn" data-a="fp" data-perm="incidents:op" ${closedSt ? 'disabled' : ''}>${ic('x')}标记误报</button>
         <button class="btn btn-primary" data-a="resolve" data-perm="incidents:op" ${closedSt ? 'disabled' : ''}>${ic('check')}确认处置</button>
       </div>`;
@@ -55,16 +41,12 @@
       const b = e.target.closest('[data-a]');
       if (!b || b.disabled) return;
       const a = b.dataset.a;
-      if (a === 'wl') {
-        act(b, () => API.post(`/incidents/${encodeURIComponent(i.id)}/whitelist`), r => toast(`已将文件指纹 ${esc(r.fingerprint)}… 加入白名单，后续相同文件将不再告警`, { type: 'info', title: '白名单已更新' }));
-        return;
-      }
       const status = a === 'fp' ? 'fp' : 'resolved';
       act(b, () => API.post(`/incidents/${encodeURIComponent(i.id)}/resolve`, { status }), upd => {
         Object.assign(i, upd);
         const local = D.incidents.find(x => x.id === i.id); if (local && local !== i) Object.assign(local, upd);
         close();
-        toast(status === 'fp' ? `事件 ${i.id} 已标记为误报，检测模型将自动学习` : `事件 ${i.id} 已确认处置并归档`, { type: 'success', title: '处置成功' });
+        toast(status === 'fp' ? `事件 ${i.id} 已标记为误报` : `事件 ${i.id} 已确认处置`, { type: 'success', title: '处置成功' });
         UI.updateNav();
         onChange && onChange();
       });

@@ -1,4 +1,4 @@
-/* 外发审批：敏感文件外发前的多级在线审批 */
+/* 外发审批：提交方（审批门户 / 终端）提交申请，部门负责人与安全管理员两级审批，提交方查询结果 */
 (function () {
   'use strict';
   const { D, ic, $$, esc, fmtTime, relTime, avatar, countUp, toast, card, chIcon, pagerHtml, openLayer, confirmDialog, act, seg, initSeg } = UI;
@@ -18,7 +18,7 @@
     return `<div class="sla ${cls}"><span>${left <= 0 ? '已超时' : `剩余 ${h ? h + ' 小时 ' : ''}${m} 分`}</span><i><b style="width:${pct}%"></b></i></div>`;
   }
   function flowHtml(a) {
-    const nodes = [['提交申请', a.user], ['部门负责人', a.leader], ['数据安全官', a.approver && a.stage >= 2 ? a.approver : (UI.me ? UI.me.name : '安全管理员')], ['加密外发', '系统自动']];
+    const nodes = [['提交申请', a.user], ['部门负责人', a.leader || '无'], ['安全管理员', a.approver && a.stage >= 2 ? a.approver : '待审批'], ['结果', { approved: '已通过', rejected: '已驳回', expired: '已过期' }[a.status] || '待定']];
     const state = i => {
       if (a.status === 'approved') return 'done';
       if (a.status === 'rejected') return i < a.stage ? 'done' : i === a.stage ? 'rej' : 'wait';
@@ -26,7 +26,7 @@
       return i < a.stage ? 'done' : i === a.stage ? 'cur' : 'wait';
     };
     return `<div class="aflow">${nodes.map(([r, n], i) => `${i ? `<span class="af-line ${state(i - 1) === 'done' && state(i) !== 'wait' ? 'done' : ''}" style="--d:${i * 0.18}s"><i></i></span>` : ''}
-      <div class="af-node ${state(i)}" style="--d:${i * 0.18}s"><b>${ic(state(i) === 'rej' ? 'x' : state(i) === 'done' ? 'check' : i === 3 ? 'lock' : 'user')}</b><span>${r}</span><small>${esc(n)}</small></div>`).join('')}</div>`;
+      <div class="af-node ${state(i)}" style="--d:${i * 0.18}s"><b>${ic(state(i) === 'rej' ? 'x' : state(i) === 'done' ? 'check' : i === 3 ? 'check' : 'user')}</b><span>${r}</span><small>${esc(n)}</small></div>`).join('')}</div>`;
   }
 
   function openApproval(id, onChange) {
@@ -43,35 +43,29 @@
       <div class="dr-body">
         <h4 class="sec-t" style="margin-top:0">审批流程</h4>
         ${flowHtml(a)}
-        <div class="callout ${a.risk >= 75 ? 'c-critical' : 'c-high'}" style="margin-top:16px">${ic('file-search')}<div>内容预检：识别到 <b>${dt.name} ${a.matches} 处</b>，文件密级 <b>${a.level}</b>，综合风险评分 <b>${a.risk}</b>。${a.risk >= 75 ? '建议强制加密并限制有效期。' : ''}</div></div>
+        <div class="callout ${a.risk >= 75 ? 'c-critical' : 'c-high'}" style="margin-top:16px">${ic('file-search')}<div>提交方预检结果：识别到 <b>${dt.name} ${a.matches} 处</b>，文件密级 <b>${a.level}</b>，风险评分 <b>${a.risk}</b>。</div></div>
         <div class="kv">${kv.map(([k, v]) => `<div><span>${k}</span><b title="${esc(v)}">${esc(v)}</b></div>`).join('')}</div>
         <h4 class="sec-t">申请理由</h4>
         <div class="quote">${esc(a.reason)}</div>
         ${actionable ? `
-        <h4 class="sec-t">放行条件</h4>
-        <div class="cond">
-          <label class="set-row compact"><div><b>强制透明加密</b><small>接收方需使用授权阅读器打开${a.level === '机密' ? '（机密文件不可关闭）' : ''}</small></div><span class="switch"><input type="checkbox" id="cEnc" checked ${a.level === '机密' ? 'disabled' : ''}><span></span></span></label>
-          <label class="set-row compact"><div><b>叠加数字水印</b><small>嵌入申请人、接收方与时间的隐式水印，可溯源</small></div><span class="switch"><input type="checkbox" id="cWm" checked><span></span></span></label>
-          <label class="set-row compact"><div><b>禁止打印与二次转发</b></div><span class="switch"><input type="checkbox" id="cNp" ${a.risk >= 75 ? 'checked' : ''}><span></span></span></label>
-          <div class="set-row compact"><div><b>文件有效期</b></div><select class="input" id="exp"><option value="3">3 天</option><option value="7" selected>7 天</option><option value="30">30 天</option></select></div>
-          <div class="set-row compact"><div><b>最大打开次数</b></div><select class="input" id="maxo"><option value="5">5 次</option><option value="10" selected>10 次</option><option value="0">不限</option></select></div>
-        </div>
         <h4 class="sec-t">审批意见 <small>驳回时必填</small></h4>
-        <textarea class="input" id="cmt" rows="3" style="width:100%" placeholder="填写审批意见，将同步通知申请人"></textarea>
+        <textarea class="input" id="cmt" rows="3" style="width:100%" placeholder="填写审批意见，提交方查询结果时可见"></textarea>
         <div class="field-err" id="cmtErr">驳回申请时请填写审批意见</div>` : `
         <h4 class="sec-t">审批记录</h4>
         <ol class="timeline">
           <li class="done" style="--i:0"><i></i><div><b>${esc(a.user)} 提交外发申请</b><p>${esc(a.reason)}</p><time>${fmtTime(a.ts)}</time></div></li>
-          ${a.stage >= 2 || a.status !== 'pending' ? `<li class="done" style="--i:1"><i></i><div><b>${esc(a.leader)}（部门负责人）同意</b><p>业务需要，同意外发</p><time>${fmtTime(a.ts + 26 * 60e3)}</time></div></li>` : `<li class="current" style="--i:1"><i></i><div><b>等待 ${esc(a.leader)}（部门负责人）审批</b><p>已通过企业微信推送待办提醒</p></div></li>`}
-          ${a.status === 'approved' ? `<li class="done" style="--i:2"><i></i><div><b>${esc(a.approver || '数据安全官')} 同意 · 加密外发</b><p>${esc(a.comment || '')}${a.conditions ? `（${a.conditions.encrypt ? '强制加密' : '不加密'}${a.conditions.watermark ? ' · 数字水印' : ''}${a.conditions.noPrint ? ' · 禁止打印' : ''} · 有效期 ${a.conditions.expireDays} 天）` : ''}</p><time>${fmtTime(a.decidedAt || a.ts)}</time></div></li>` : ''}
+          ${!a.leader ? `<li class="done" style="--i:1"><i></i><div><b>无部门负责人</b><p>直接进入安全管理员审批</p></div></li>`
+            : a.leaderAt ? `<li class="done" style="--i:1"><i></i><div><b>${esc(a.leader)}（部门负责人）${a.status === 'rejected' && a.approver === a.leader ? '驳回' : '同意'}</b><p>${esc(a.leaderComment || '')}</p><time>${fmtTime(a.leaderAt)}</time></div></li>`
+            : a.stage >= 2 ? `<li class="done" style="--i:1"><i></i><div><b>${esc(a.leader)}（部门负责人）已同意</b></div></li>`
+            : a.status === 'pending' ? `<li class="current" style="--i:1"><i></i><div><b>等待 ${esc(a.leader)}（部门负责人）审批</b><p>由审批门户回传部门负责人意见</p></div></li>` : ''}
+          ${a.status === 'approved' ? `<li class="done" style="--i:2"><i></i><div><b>${esc(a.approver || '安全管理员')} 同意</b><p>${esc(a.comment || '')}</p><time>${fmtTime(a.decidedAt || a.ts)}</time></div></li>` : ''}
           ${a.status === 'rejected' ? `<li class="done rej" style="--i:2"><i></i><div><b>审批被驳回</b><p>${esc(a.approver || '')}：${esc(a.comment || '')}</p><time>${fmtTime(a.decidedAt || a.ts)}</time></div></li>` : ''}
           ${a.status === 'expired' ? `<li class="done" style="--i:2"><i></i><div><b>申请已过期</b><p>超过审批时限未处理，系统自动关闭</p><time>${fmtTime(a.deadline)}</time></div></li>` : ''}
         </ol>`}
       </div>
       <div class="dr-foot">
         ${actionable ? `<button class="btn" data-a="fwd" data-perm="approvals:op">${ic('send')}转交</button><button class="btn btn-danger-o" data-a="rej" data-perm="approvals:op">${ic('x')}驳回</button><button class="btn btn-primary" data-a="ok" data-perm="approvals:op">${ic('check')}同意外发</button>`
-        : other ? `<button class="btn" data-close>关闭</button><button class="btn btn-primary" data-a="urge" data-perm="approvals:op">${ic('bell')}催办 ${esc(a.leader)}</button>`
-          : `<button class="btn" data-close>关闭</button>`}
+        : `<button class="btn" data-close>关闭</button>`}
       </div>`;
     const { panel, close } = openLayer('drawer', html);
     const g = sel => panel.querySelector(sel);
@@ -86,17 +80,15 @@
     g('.dr-foot').addEventListener('click', async e => {
       const b = e.target.closest('[data-a]'); if (!b || b.disabled) return;
       const k = b.dataset.a;
-      if (k === 'urge') return act(b, () => API.post(`/approvals/${encodeURIComponent(a.id)}/urge`), r => toast(`已通过企业微信向 ${esc(r.leader)} 发送催办提醒`, { type: 'success', title: '催办成功' }));
       if (k === 'fwd') return forward(b);
       const cmt = g('#cmt');
       if (k === 'rej') {
         if (!cmt.value.trim()) { cmt.classList.add('err', 'shake'); g('#cmtErr').classList.add('show'); setTimeout(() => cmt.classList.remove('shake'), 500); cmt.focus(); return; }
-        const ok = await confirmDialog({ title: '驳回外发申请', text: `将驳回 ${esc(a.user)} 的外发申请，并通知申请人。`, okText: '确认驳回', danger: true });
+        const ok = await confirmDialog({ title: '驳回外发申请', text: `将驳回 ${esc(a.user)} 的外发申请，提交方查询结果时可见驳回意见。`, okText: '确认驳回', danger: true });
         if (!ok) return;
         return decide(b, { decision: 'reject', comment: cmt.value.trim() }, `已驳回 ${esc(a.user)} 的外发申请`, 'warning');
       }
-      const conditions = { encrypt: g('#cEnc').checked, watermark: g('#cWm').checked, noPrint: g('#cNp').checked, expireDays: +g('#exp').value, maxOpens: +g('#maxo').value };
-      decide(b, { decision: 'approve', comment: cmt.value.trim(), conditions }, `${esc(a.file)} 已加密并外发至 ${esc(a.to)}，有效期 ${conditions.expireDays} 天`);
+      decide(b, { decision: 'approve', comment: cmt.value.trim() }, `已同意 ${esc(a.user)} 外发 ${esc(a.file)}，提交方查询到结果后放行`);
     });
     function forward(btn) {
       if (!D.approvers.length) { toast('没有其他可转交的审批人', { type: 'warning' }); return; }
@@ -106,7 +98,7 @@
       m.panel.querySelector('[data-ok]').addEventListener('click', ev => {
         const to = m.panel.querySelector('#fwdTo');
         act(ev.currentTarget, () => API.post(`/approvals/${encodeURIComponent(a.id)}/decision`, { decision: 'forward', to: to.value }), () => {
-          m.close(); toast(`已转交给 ${esc(to.selectedOptions[0].textContent)}，您将收到处理结果通知`, { type: 'info', title: '已转交' });
+          m.close(); toast(`已转交给 ${esc(to.selectedOptions[0].textContent)}`, { type: 'info', title: '已转交' });
         });
       });
     }
@@ -119,9 +111,8 @@
     html() {
       return `
       <div class="page-head">
-        <div><h1>外发审批</h1><p>敏感文件外发前的多级在线审批，审批通过后自动加密、加水印并限制时效</p></div>
+        <div><h1>外发审批</h1><p>审批门户或终端提交外发申请，部门负责人与安全管理员两级审批，提交方通过接口查询结果</p></div>
         <div class="head-actions">
-          <button class="btn" id="flowCfg">${ic('sliders')}审批流程配置</button>
           <button class="btn btn-primary" id="batchOk" data-perm="approvals:op" disabled>${ic('check')}批量同意<span class="cnt"></span></button>
         </div>
       </div>
@@ -140,7 +131,7 @@
         <div class="table-wrap"><table class="table">
           <thead><tr><th class="ck"><input type="checkbox" id="ckAll" aria-label="全选"></th><th>申请单</th><th>申请人</th><th>外发文件</th><th>外发方式 / 接收方</th><th>申请理由</th><th>审批时效</th><th>状态</th><th></th></tr></thead>
           <tbody id="rows"></tbody></table></div>
-        <div class="pager" id="pager"></div>`, { sub: '审批链：申请人 → 部门负责人 → 数据安全官 → 加密外发' })}`;
+        <div class="pager" id="pager"></div>`, { sub: '审批链：申请人 → 部门负责人 → 安全管理员' })}`;
     },
     mount(root) {
       const q = s => root.querySelector(s);
@@ -193,7 +184,7 @@
       q('#batchOk').addEventListener('click', async () => {
         const n = sel.size;
         const hi = D.approvals.filter(a => sel.has(a.id) && a.level === '机密').length;
-        const ok = await confirmDialog({ title: `批量同意 ${n} 个外发申请`, text: `选中的文件将统一按「强制加密 + 数字水印 + 7 天有效期」放行。${hi ? `其中 ${hi} 个为机密文件，请确认已逐一核实。` : ''}`, okText: '确认同意' });
+        const ok = await confirmDialog({ title: `批量同意 ${n} 个外发申请`, text: `将同意选中的外发申请。${hi ? `其中 ${hi} 个为机密文件，请确认已逐一核实。` : ''}`, okText: '确认同意' });
         if (!ok) return;
         act(q('#batchOk'), () => API.post('/approvals/batch-approve', { ids: [...sel] }), async r => {
           sel.clear();
@@ -201,24 +192,6 @@
           refresh(); UI.updateNav();
           toast(`已批量同意 ${r.approved} 个外发申请${r.skipped ? `，${r.skipped} 个已超时或已处理被跳过` : ''}`, { type: 'success', title: '审批完成' });
         });
-      });
-      q('#flowCfg').addEventListener('click', () => {
-        const { panel, close } = openLayer('modal', `
-          <div class="md-head"><div><h2>审批流程配置</h2><p>根据文件密级自动匹配审批链</p></div><button class="icon-btn" data-close aria-label="关闭">${ic('x')}</button></div>
-          <div class="md-body">
-            ${[['机密', '部门负责人 → 数据安全官 → CISO（金额/条数超阈值时）', '4 小时 / 24 小时', 'b-danger'], ['秘密', '部门负责人 → 数据安全官', '24 小时', 'b-warning'], ['内部', '部门负责人（可设置自动通过白名单接收方）', '48 小时', 'b-info']].map(([l, f, s, c]) => `
-              <div class="flow-row"><span class="tag ${c}">${ic('lock')}${l}</span><div><b>${f}</b><small>审批时限：${s} · 超时自动驳回并通知申请人</small></div><button class="btn btn-sm btn-ghost">${ic('edit')}编辑</button></div>`).join('')}
-            <label class="set-row"><div><b>白名单接收方自动通过</b><small>已签署 NDA 的合作伙伴域名（12 个）可跳过部门负责人审批</small></div><span class="switch"><input type="checkbox" checked><span></span></span></label>
-            <label class="set-row"><div><b>审批人离线时自动转交代理人</b><small>根据 AD 中配置的直属上级 / 代理人关系</small></div><span class="switch"><input type="checkbox" checked><span></span></span></label>
-          </div>
-          <div class="md-foot"><span class="sp"></span><button class="btn" data-close>取消</button><button class="btn btn-primary" data-ok data-perm="approvals:cfg">${ic('save')}保存配置</button></div>`);
-        const sw = panel.querySelectorAll('.set-row input');
-        sw[0].checked = D.settings.apvAutoWhitelist !== false; sw[1].checked = D.settings.apvDelegate !== false;
-        panel.querySelector('[data-ok]').addEventListener('click', e => act(e.currentTarget, () => API.put('/approvals/flow', { autoWhitelist: sw[0].checked, delegate: sw[1].checked }), () => {
-          D.settings.apvAutoWhitelist = sw[0].checked; D.settings.apvDelegate = sw[1].checked;
-          close(); toast('审批流程配置已保存，新提交的申请将按新流程执行', { type: 'success', title: '保存成功' });
-        }));
-        UI.applyPerms(panel);
       });
       const iv = setInterval(() => $$('tr[data-id]', root).forEach(tr => { const a = D.approvals.find(x => x.id === tr.dataset.id); const c = tr.children[6]; if (a && c) c.innerHTML = sla(a); }), 30000);
       UI.onCleanup(() => clearInterval(iv));

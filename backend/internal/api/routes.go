@@ -21,8 +21,6 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/auth/config", s.handleAuthConfig)
 	m.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	m.HandleFunc("POST /api/v1/auth/mfa", s.handleMFA)
-	m.HandleFunc("POST /api/v1/auth/sso", s.handleFederated("企业 SSO"))
-	m.HandleFunc("POST /api/v1/auth/qr", s.handleFederated("企业微信扫码"))
 	m.HandleFunc("POST /api/v1/setup/begin", s.handleSetupBegin)
 	m.HandleFunc("POST /api/v1/setup/complete", s.handleSetupComplete)
 
@@ -40,6 +38,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/agent/detections", s.agentAuth(s.handleAgentDetections))
 	m.HandleFunc("POST /api/v1/agent/commands/{id}/result", s.agentAuth(s.handleAgentCommandResult))
 	m.HandleFunc("POST /api/v1/ingest/approvals/{id}/leader", s.agent(s.handleLeaderDecision))
+	m.HandleFunc("GET /api/v1/ingest/approvals/{id}", s.agent(s.handleApprovalStatus))
 
 	// 会话与通用
 	s.route("GET /api/v1/auth/me", "", "", s.handleMe)
@@ -60,7 +59,6 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/incidents", "incidents", "view", s.handleIncidents)
 	s.route("GET /api/v1/incidents/{id}", "incidents", "view", s.handleIncident)
 	s.route("POST /api/v1/incidents/{id}/resolve", "incidents", "op", s.handleIncidentResolve)
-	s.route("POST /api/v1/incidents/{id}/whitelist", "incidents", "op", s.handleIncidentWhitelist)
 	s.route("POST /api/v1/incidents/batch-resolve", "incidents", "op", s.handleIncidentBatch)
 
 	// 外发审批
@@ -68,9 +66,7 @@ func (s *Server) routes() {
 		s.respond(w, func(d *store.Data) any { return d.Approvals })
 	})
 	s.route("POST /api/v1/approvals/{id}/decision", "approvals", "op", s.handleApprovalDecision)
-	s.route("POST /api/v1/approvals/{id}/urge", "approvals", "op", s.handleApprovalUrge)
 	s.route("POST /api/v1/approvals/batch-approve", "approvals", "op", s.handleApprovalBatch)
-	s.route("PUT /api/v1/approvals/flow", "approvals", "cfg", s.handleApprovalFlow)
 
 	// UEBA
 	s.route("POST /api/v1/ueba/watch", "ueba", "op", s.handleWatch)
@@ -83,15 +79,11 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/rules", "rules", "cfg", s.handleRuleCreate)
 	s.route("PUT /api/v1/rules/{id}", "rules", "cfg", s.handleRuleUpdate)
 	s.route("PATCH /api/v1/rules/{id}", "rules", "cfg", s.handleRulePatch)
-	s.route("POST /api/v1/rules/{id}/{action}", "rules", "op", s.handleRuleAction)
 	s.route("POST /api/v1/rules/test", "rules", "view", s.handleRuleTest)
 
 	// 数据发现与终端
-	s.route("POST /api/v1/discovery/scans", "discovery", "op", s.handleScanStart)
 	s.route("POST /api/v1/discovery/repos", "discovery", "op", s.handleRepoAdd)
-	s.route("POST /api/v1/discovery/repos/{idx}/rescan", "discovery", "op", s.handleRepoRescan)
 	s.route("POST /api/v1/endpoints/{id}/actions", "endpoints", "op", s.handleEndpointAction)
-	s.route("POST /api/v1/endpoints/batch-upgrade", "endpoints", "op", s.handleEndpointUpgrade)
 	s.route("GET /api/v1/endpoints/{id}/commands", "endpoints", "view", s.handleEndpointCommands)
 	s.route("POST /api/v1/endpoints/{id}/revoke", "endpoints", "cfg", s.handleEndpointRevoke)
 	s.route("POST /api/v1/endpoints/deploy-token", "endpoints", "cfg", s.handleDeployToken)
@@ -112,7 +104,6 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/audit/verify", "audit", "view", s.handleAuditVerify)
 
 	// 组织与权限
-	s.route("POST /api/v1/iam/ad-sync", "iam", "op", s.handleADSync)
 	s.route("POST /api/v1/iam/employees/import", "iam", "cfg", s.handleEmployeeImport)
 	s.route("POST /api/v1/roles", "iam", "cfg", s.handleRoleCreate)
 	s.route("PUT /api/v1/roles/{key}/perms", "iam", "cfg", s.handleRolePerms)
@@ -180,7 +171,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request, a *Acto
 			}
 		}
 		out := map[string]any{"now": now.UnixMilli(), "me": me, "level": seed.Level, "incidents": recent,
-			"system": map[string]any{"env": s.envName(), "version": s.Cfg.Version, "ruleVersion": d.Settings["ruleVersion"], "nodes": len(d.Nodes), "nodesOnline": online}}
+			"system": map[string]any{"env": s.envName(), "version": s.Cfg.Version, "nodes": len(d.Nodes), "nodesOnline": online}}
 		out["channels"], out["dataTypes"], out["depts"], out["roles"] = d.Channels, d.DataTypes, d.Depts, d.Roles
 		out["auditTypes"] = []string{"策略变更", "事件处置", "登录", "终端操作", "数据导出", "配置变更", "白名单", "外发审批", "规则变更", "权限变更", "越权访问"}
 		out["fleet"] = d.Fleet(now)
@@ -320,7 +311,7 @@ func (s *Server) handleWatch(w http.ResponseWriter, r *http.Request, a *Actor) {
 	})
 }
 
-// POST /api/v1/ueba/strict|case {user}
+// POST /api/v1/ueba/strict {user}
 func (s *Server) handleUebaAction(w http.ResponseWriter, r *http.Request, a *Actor) {
 	var req struct {
 		User string `json:"user"`
@@ -344,18 +335,8 @@ func (s *Server) handleUebaAction(w http.ResponseWriter, r *http.Request, a *Act
 				}
 			}
 		})
-		s.audit(a, "策略变更", "对 "+req.User+" 启用严格管控（外发审批 / 禁用 USB 写入 / 截屏水印），下发终端："+strings.Join(hosts, "、"), true, "")
+		s.audit(a, "策略变更", "对 "+req.User+" 启用严格管控（终端审计升级为阻断），涉及终端："+strings.Join(hosts, "、"), true, "")
 		writeJSON(w, http.StatusOK, map[string]any{"hosts": hosts})
-	case "case":
-		linked, err := s.St.CountIncidents(r.Context(), store.IncidentFilter{User: req.User})
-		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "统计失败")
-			return
-		}
-		var id string
-		s.St.Write(func(d *store.Data) { id = "CASE-" + strconv.Itoa(2000+store.NextSeq(d, "case")) })
-		s.audit(a, "事件处置", "对 "+req.User+" 发起调查工单 "+id+"（关联 "+strconv.Itoa(linked)+" 起事件）", true, "")
-		writeJSON(w, http.StatusCreated, map[string]any{"case": id, "linked": linked})
 	default:
 		writeErr(w, http.StatusBadRequest, "不支持的操作")
 	}
