@@ -15,4 +15,4 @@ agent/data/
 deploy/.env
 
 # 本地工具配置
-.claude/settings.local.json
+.claude/
